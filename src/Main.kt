@@ -153,6 +153,7 @@ abstract class Player(id : String, position: DecartPoint, weight : Double, var r
     fun splitDistance() = Math.abs(64 - maxSpeed() * maxSpeed())/(2 * consts!!.VISCOSITY)
 
     fun refresh(position: DecartPoint, weight : Double, radius :Double) : Player{
+        this.radius = radius
         if (memory + 1 == consts!!.GENERAL_MEMORY)
             speed = position - this.position
         else
@@ -164,8 +165,8 @@ abstract class Player(id : String, position: DecartPoint, weight : Double, var r
 
     fun isTo(pos : DecartPoint, vec : DecartVector) : Boolean{
         val dist = (position - pos).length
-        val sin = radius / Math.max(1.0, dist)
-        val cos = Math.sqrt(Math.sqrt(1.0 - sin * sin))
+        val sin = radius * 1.5 / Math.max(1.0, dist)
+        val cos = Math.sqrt(1.0 - sin * sin)
         return vec.cos(position - pos) > cos
     }
 }
@@ -275,7 +276,7 @@ class HopeField(override val force : Double, val nearDistance : Double) : IPoten
         //makeLog("\t\t cos = $cos")
         //makeLog("\t\t (force * (0.5) / offset.length = ${force * (0.5) / offset.length}}")
         val distance = (offset.length + (position - hero.position).length) / 2
-        return (force )/ hero.weight * (1.0 + cos + 0.2 * Math.random()) / Math.sqrt(distance)
+        return force / hero.weight  / Math.sqrt(distance)
     }
 
     fun check(where : DecartPoint){
@@ -328,7 +329,7 @@ class PolarPotentialFields(var objects :List<PotentialObject>, val fields: List<
                 if (!fl) break
                 for (enemy in world.enemies) {
                     if (!fl) break
-                    if (enemy.isTo(hero.position, it.toMove - hero.position) && enemy.weight > hero.weight * 1.2 && (enemy.position - hero.position).length < hero.radius * 3)
+                    if (enemy.isTo(hero.position, it.toMove - hero.position) && enemy.weight > hero.weight * 1.1 && enemy.radius * 1.5 < (enemy.position - hero.position).length && (enemy.position - hero.position).length < hero.radius * 3)
                         fl = false
                 }
             }
@@ -512,7 +513,20 @@ class SimpleStrategy : IStrategy{
 
     private fun potentialObjects() =
             world!!.enemies.map { PotentialObject(it.position, world!!.heroes)} +
-                    world!!.foods.take(10).map { PotentialObject(it.position, world!!.heroes)} +
+                    world!!.foods.filter{
+                        it.position.x > 50 && it.position.y > 50 && consts!!.GAME_WIDTH - it.position.x > 50 && consts!!.GAME_HEIGHT - it.position.y > 50
+                    }.filter {
+                        var fl = true
+                        for (hero in world!!.heroes) {
+                            if (!fl) break
+                            for (enemy in world!!.enemies) {
+                                if (!fl) break
+                                if (enemy.weight > hero.weight * 1.1 && (enemy.position - it.position).length < hero.radius * 3 && (enemy.position - hero.position).length < hero.radius * 4)
+                                    fl = false
+                            }
+                        }
+                        fl
+                    }.take(10).map { PotentialObject(it.position, world!!.heroes)} +
                     hopes.map { PotentialObject(it.position, world!!.heroes)} + toBorder
 
     override fun step(world : World) : StepInfo {
