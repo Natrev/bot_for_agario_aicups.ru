@@ -161,6 +161,13 @@ abstract class Player(id : String, position: DecartPoint, weight : Double, var r
         this.weight = weight
         return this
     }
+
+    fun isTo(pos : DecartPoint, vec : DecartVector) : Boolean{
+        val dist = (position - pos).length
+        val sin = radius / Math.max(1.0, dist)
+        val cos = Math.sqrt(Math.sqrt(1.0 - sin * sin))
+        return vec.cos(position - pos) > cos
+    }
 }
 
 class Food(position : DecartPoint) : Object(position){
@@ -312,15 +319,29 @@ class PotentialObject(var toMove : DecartPoint, val heroes : List<Hero>, val ch 
     }
 }
 
-class PolarPotentialFields(val objects :List<PotentialObject>, val fields: List<IPotentialSource>){
+class PolarPotentialFields(var objects :List<PotentialObject>, val fields: List<IPotentialSource>){
     fun toMove() : DecartPoint{
 
+        objects = objects.filter {
+            var fl = true
+            for (hero in world.heroes) {
+                if (!fl) break
+                for (enemy in world.enemies) {
+                    if (!fl) break
+                    if (enemy.isTo(hero.position, it.toMove - hero.position) && enemy.weight > hero.weight * 1.2 && (enemy.position - hero.position).length < hero.radius * 3)
+                        fl = false
+                }
+            }
+            fl
+        }
 
         for (obj in objects) {
             obj.refreshPotential()
         }
 
         for (obj in objects){
+            var flag = false
+
             for (field in fields){
                 obj += field
             }
