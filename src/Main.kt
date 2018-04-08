@@ -145,15 +145,17 @@ interface ICircle{
 
 abstract class CircularObject(val id : String, position : DecartPoint, var weight : Double) : Object(position)
 
-abstract class Player(id : String, position: DecartPoint, weight : Double, var radius :Double, var speed : DecartVector)
-    : CircularObject(id, position, weight){
+abstract class Player(id : String, position: DecartPoint, weight : Double, var speed : DecartVector)
+    : CircularObject(id, position, weight), ICircle{
+
+    override val radius : Double
+        get() = 2 * Math.sqrt(weight)
 
     fun maxSpeed() = consts!!.SPEED_FACTOR / weight
 
     fun splitDistance() = Math.abs(64 - maxSpeed() * maxSpeed())/(2 * consts!!.VISCOSITY)
 
-    fun refresh(position: DecartPoint, weight : Double, radius :Double) : Player{
-        this.radius = radius
+    fun refresh(position: DecartPoint, weight : Double) : Player{
         if (memory + 1 == consts!!.GENERAL_MEMORY)
             speed = position - this.position
         else
@@ -191,7 +193,7 @@ class Virus(id : String, position: DecartPoint, weight : Double) : CircularObjec
 }
 
 class Enemy(id : String, position: DecartPoint, weight : Double, radius :Double, speed : DecartVector)
-    : Player(id, position, weight, radius, speed){
+    : Player(id, position, weight, speed){
 
 
     override fun pastTick() : IRemember{
@@ -224,7 +226,7 @@ class Enemy(id : String, position: DecartPoint, weight : Double, radius :Double,
 class SeenCircle(override val position: DecartPoint, override val radius: Double) : ICircle
 
 class Hero(id : String, position: DecartPoint, weight : Double, radius :Double, speed : DecartVector)
-    : Player(id, position, weight, radius, speed){
+    : Player(id, position, weight, speed){
 
     override fun effect(where : DecartPoint, hero: Hero) : Double = TODO()
     fun getSeenCircle(cnt : Int) : SeenCircle {
@@ -244,16 +246,6 @@ class Hero(id : String, position: DecartPoint, weight : Double, radius :Double, 
     }
 
 }
-
-fun getPosition(obj : JSONObject) = DecartPoint(obj["X"]!!.toString().toDouble(), obj["Y"]!!.toString().toDouble())
-
-fun getSpeed(obj : JSONObject) = DecartVector(obj["SX"]!!.toString().toDouble(), obj["SY"]!!.toString().toDouble())
-
-
-var GAME_WIDTH = 0.0
-var GAME_HEIGHT = 0.0
-
-
 
 
 class HopeField(override val force : Double, val nearDistance : Double) : IPotentialSource {
@@ -382,6 +374,10 @@ class World(){
     var viruses = listOf<Virus>()
     var enemies = listOf<Enemy>()
 
+    fun getPosition(obj : JSONObject) = DecartPoint(obj["X"]!!.toString().toDouble(), obj["Y"]!!.toString().toDouble())
+
+    fun getSpeed(obj : JSONObject) = DecartVector(obj["SX"]!!.toString().toDouble(), obj["SY"]!!.toString().toDouble())
+
     fun updateFood(objects: JSONArray){
 
         val mp : SortedMap<DecartPoint, Food> = foods.map {Pair(it.position, it)} .toMap()
@@ -418,7 +414,7 @@ class World(){
             val pos = getPosition(it)
             val w = it["M"]!!.toString().toDouble()
             val r = it["R"]!!.toString().toDouble()
-            if (id in mp) mp[id]!!.refresh(pos, w, r) as Enemy
+            if (id in mp) mp[id]!!.refresh(pos, w) as Enemy
             else Enemy(id = id, position = pos, weight = w, radius = r, speed=DecartVector(0.0,0.0))
         }
 
