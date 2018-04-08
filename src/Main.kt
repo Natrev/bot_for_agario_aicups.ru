@@ -74,6 +74,9 @@ class DecartVector (override val x : Double, override val y : Double) : IVector{
         get() = this * (1.0/Math.max(1.0, length))
 
     fun cos(vec : IVector) = (this * vec) / (length * vec.length)
+
+    val perpen : DecartVector
+        get() = DecartVector(y, -x)
 }
 
 class DecartPoint (override val x : Double, override val y : Double) : IPoint {
@@ -179,7 +182,12 @@ class Food(position : DecartPoint) : Object(position){
         val direction = hero.speed
         val cos = Math.max(1.0, direction * offset / Math.max(0.5, (direction.length * offset.length)))
         val distance = (offset.length + (position - hero.position).length) / 2
-        return force * consts!!.FOOD_MASS / hero.weight * (1.0 + cos) / distance
+        val rdp = world.getRadiusPerpen(hero.position)
+        val rdpcos = Math.abs(rdp.cos(position - hero.position))
+
+
+
+        return force * consts!!.FOOD_MASS / hero.weight  / distance
     }
 }
 
@@ -264,11 +272,16 @@ class HopeField(override val force : Double, val nearDistance : Double) : IPoten
         //makeLog("\t\t where = {${where.x}, ${where.y}}")
         //makeLog("\t\t direction = {${direction.x}, ${direction.y}}")
         //makeLog("\t\t offset = {${offset.x}, ${offset.y}}")
-        val cos = Math.max(1.0, direction * offset / Math.max(0.5, (direction.length * offset.length)))
         //makeLog("\t\t cos = $cos")
         //makeLog("\t\t (force * (0.5) / offset.length = ${force * (0.5) / offset.length}}")
-        val distance = (offset.length + (position - hero.position).length) / 2
-        return force / hero.weight  / Math.sqrt(distance)
+        val rdp = world.getRadiusPerpen(hero.position)
+        val rdpcos = Math.abs(rdp.cos(where - hero.position)) + 0.05 * rdp.cos(direction) + 0.2 * (where - consts!!.CENTER).cos(direction)
+        val cos = 0.1 * direction.cos(where - hero.position)
+        makeLog("\t\t HopeField effect")
+        makeLog("\t\t where = {${where.x}, ${where.y}}")
+        makeLog("\t\t rdp = {${rdp.x}, ${rdp.y}}")
+        makeLog("\t\t rdpcos = $rdpcos")
+        return force / hero.weight  * (rdpcos + cos) / 30.0
     }
 
     fun check(where : DecartPoint){
@@ -290,24 +303,22 @@ class AngleField(override val force : Double, override val position: DecartPoint
 }
 
 
-class PotentialObject(var toMove : DecartPoint, val heroes : List<Hero>, val ch : Double = 0.0) : IPotential{
+class PotentialObject(var toMove : DecartPoint, val ch : Double = 0.0) : IPotential{
     override var potential = 0.0
 
     override fun plusAssign(field: IPotentialSource){
-        potential += heroes.map {
-                val dir = (toMove - it.position).normal * consts!!.SPEED_FACTOR
-            field.effect(it.position + dir, it)
+        potential += world.heroes.map {
+            val dir = (toMove - it.position).normal * it.speed.length
+            val pos = it.position + dir
+            if (pos.x < it.radius || pos.x > consts!!.GAME_WIDTH - it.radius||pos.y < it.radius || pos.y > consts!!.GAME_HEIGHT - it.radius) -1000000.0
+            else field.effect(pos, it)
         }.sum() + ch
     }
 
     override fun timesAssign(field: IPotentialSource) {
-        potential *= heroes.map {
-            val vec = (toMove - it.position)
-            if (vec.length < it.maxSpeed()) field.effect(toMove, it)
-            else{
-                val dir = (toMove - it.position).normal * it.maxSpeed()
+        potential *= world.heroes.map {
+            val dir = (toMove - it.position).normal
                 field.effect(it.position + dir, it)
-            }
         }.sum() + ch
     }
 }
@@ -352,6 +363,7 @@ class Consts(config : JSONObject){
     val FOOD_MASS = config["FOOD_MASS"]!!.toString().toDouble()
     val INERTION_FACTOR = config["INERTION_FACTOR"]!!.toString().toDouble()
     val VISCOSITY = config["VISCOSITY"]!!.toString().toDouble()
+    val CENTER = DecartPoint(GAME_WIDTH/2, GAME_HEIGHT/2)
 
     // type
     val FOOD_TYPE = "F"
@@ -373,6 +385,8 @@ class World(){
     var ejetions = listOf<Ejection>()
     var viruses = listOf<Virus>()
     var enemies = listOf<Enemy>()
+
+    fun getRadiusPerpen(pos : DecartPoint) = (pos - consts!!.CENTER).perpen
 
     fun getPosition(obj : JSONObject) = DecartPoint(obj["X"]!!.toString().toDouble(), obj["Y"]!!.toString().toDouble())
 
@@ -483,7 +497,7 @@ class SimpleStrategy : IStrategy{
 
     var world : World? = null
     val hopes = listOf(
-            HopeField(force = 70.0, nearDistance = 100.0)
+            HopeField(force = 1.0, nearDistance = 100.0)
     )
     val borders = listOf(
             AngleField(force = 200.0, position = DecartPoint(x = 0.0, y = 0.0), nearDistance = 100.0),
@@ -495,10 +509,10 @@ class SimpleStrategy : IStrategy{
     val toBorder : List<PotentialObject>
             get(){
                 if (to_border == null){
-                    to_border = (0..10).map { PotentialObject(DecartPoint(0.0, it * consts!!.GAME_HEIGHT/10.0), world!!.heroes, -1.0)} +
-                            (0..10).map { PotentialObject(DecartPoint(consts!!.GAME_WIDTH, it * consts!!.GAME_HEIGHT/10.0), world!!.heroes, -1.0)} +
-                            (1..9).map { PotentialObject(DecartPoint(0.0, 0.0), world!!.heroes, -1.0)} +
-                            (1..9).map { PotentialObject(DecartPoint(it * consts!!.GAME_WIDTH/10.0, consts!!.GAME_HEIGHT), world!!.heroes, -1.0)}
+                    to_border = (0..10).map { PotentialObject(DecartPoint(0.0, it * consts!!.GAME_HEIGHT/10.0))} +
+                            (0..10).map { PotentialObject(DecartPoint(consts!!.GAME_WIDTH, it * consts!!.GAME_HEIGHT/10.0))} +
+                            (1..9).map { PotentialObject(DecartPoint(0.0, 0.0),  -1.0)} +
+                            (1..9).map { PotentialObject(DecartPoint(it * consts!!.GAME_WIDTH/10.0, consts!!.GAME_HEIGHT))}
                 }
                 return to_border!!
             }
@@ -507,9 +521,9 @@ class SimpleStrategy : IStrategy{
 
     private fun findFood() : Food? = world!!.foods.firstOrNull()
 
-    private fun potentialObjects() =
-            world!!.enemies.map { PotentialObject(it.position, world!!.heroes)} +
-                    world!!.foods.filter{
+    private fun potentialObjects() = toBorder +
+            world!!.enemies.map { PotentialObject(it.position)} +
+            world!!.foods.filter{
                         it.position.x > 50 && it.position.y > 50 && consts!!.GAME_WIDTH - it.position.x > 50 && consts!!.GAME_HEIGHT - it.position.y > 50
                     }.filter {
                         var fl = true
@@ -522,11 +536,13 @@ class SimpleStrategy : IStrategy{
                             }
                         }
                         fl
-                    }.take(10).map { PotentialObject(it.position, world!!.heroes)} +
-                    hopes.map { PotentialObject(it.position, world!!.heroes)} + toBorder
+                    }.take(10).map { PotentialObject(it.position)}
 
     override fun step(world : World) : StepInfo {
         this.world = world
+
+        makeLog("center = { ${consts!!.CENTER.x}, ${consts!!.CENTER.y} }")
+        makeLog("heroPos = { ${world.heroes[0].position.x}, ${world.heroes[0].position.y} }")
 
         var needSpleet = world.maxHeroSize() > 120.0 && world.maxEnemySize() * 2.4 < world.minHeroSize()
 
@@ -543,11 +559,8 @@ class SimpleStrategy : IStrategy{
                 }
             }
 
-        for (hope in hopes)
-            for (hero in world.heroes)
-                hope.check(hero.position)
 
-        val fields = world.foods + world.enemies + borders + hopes
+        val fields =hopes +world.enemies + world.foods
 
         val toMove = PolarPotentialFields(potentialObjects(), fields).toMove()
         makeLog("toMove = { ${toMove.x}, ${toMove.y} }")
