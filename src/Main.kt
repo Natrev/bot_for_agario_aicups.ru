@@ -275,7 +275,7 @@ class Enemy(id : String, position: DecartPoint, weight : Double, radius :Double,
         val sin = 0.1 * Math.abs((where - position).perpen.cos(nextDirection))
 
 
-        return if (weight< hero.weight * 1.5 ) -force / hero.weight / distance
+        return if (weight< hero.weight * 1.15 ) -force / hero.weight / distance
         else -10  * force * weight / hero.weight / distance
     }
 }
@@ -347,7 +347,8 @@ class AngleField(override val force : Double, override val position: DecartPoint
     override fun effect(where : DecartPoint, hero: Hero) : Double{
         val distance = Math.abs(position.x - where.x) + Math.abs(position.y - where.y)
         if (distance > nearDistance) return 0.0
-        return -force * force / hero.weight / distance
+        val cos = (where - hero.position).cos(position - hero.position)
+        return -force / hero.weight / (30.0 + Math.sqrt((where - position).length))  * (1.5 + cos)
 
     }
 }
@@ -358,7 +359,7 @@ class PotentialObject(var toMove : DecartPoint, val ch : Double = 0.0) : IPotent
 
     override fun plusAssign(field: IPotentialSource){
         potential += world.heroes.map {
-            val dir = (toMove - it.position).normal * it.speed.length
+            val dir = (toMove - it.position).normal * Math.max(it.maxSpeed() / 3.0, it.speed.length)
             val pos = it.position + dir
             if (pos.x < it.radius || pos.x > consts!!.GAME_WIDTH - it.radius||pos.y < it.radius || pos.y > consts!!.GAME_HEIGHT - it.radius) -1000000.0
             else field.effect(pos, it)
@@ -539,10 +540,10 @@ class SimpleStrategy : IStrategy{
             HopeField(force = 0.5, nearDistance = 100.0)
     )
     val borders = listOf(
-            AngleField(force = 10.0, position = DecartPoint(x = 0.0, y = 0.0), nearDistance = 300.0),
-            AngleField(force = 10.0, position = DecartPoint(x = consts!!.GAME_WIDTH, y = 0.0), nearDistance = 300.0),
-            AngleField(force = 10.0, position = DecartPoint(x = 0.0, y = consts!!.GAME_HEIGHT), nearDistance = 300.0),
-            AngleField(force = 10.0, position = DecartPoint(x = consts!!.GAME_WIDTH, y = consts!!.GAME_HEIGHT), nearDistance = 300.0)
+            AngleField(force = 10.0, position = DecartPoint(x = 0.0, y = 0.0), nearDistance = 100.0),
+            AngleField(force = 10.0, position = DecartPoint(x = consts!!.GAME_WIDTH, y = 0.0), nearDistance = 100.0),
+            AngleField(force = 10.0, position = DecartPoint(x = 0.0, y = consts!!.GAME_HEIGHT), nearDistance = 100.0),
+            AngleField(force = 10.0, position = DecartPoint(x = consts!!.GAME_WIDTH, y = consts!!.GAME_HEIGHT), nearDistance = 100.0)
     )
 
     val toBorder : List<PotentialObject>
@@ -588,7 +589,7 @@ class SimpleStrategy : IStrategy{
             }
 
 
-        val fields = hopes + world.enemies + world.foods + borders
+        val fields = hopes + world.enemies + world.foods.take(25) + borders
 
         val toMove = PolarPotentialFields(potentialObjects(), fields).toMove()
         makeLog("toMove = { ${toMove.x}, ${toMove.y} }")
