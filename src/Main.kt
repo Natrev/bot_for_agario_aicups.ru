@@ -30,6 +30,12 @@ interface IVector{
     operator fun times(scale : Double) : IVector
     operator fun times(vec : IVector) : Double
 
+
+    operator fun plusAssign(obj : IVector)
+    operator fun minusAssign(obj : IVector)
+
+    operator fun timesAssign(scale : Double)
+
     operator fun compareTo(other : IVector) =
             if (x == other.x && y == other.y) 0
             else if (x < other.x || x == other.x && y < other.y) -1
@@ -46,6 +52,11 @@ interface IPoint{
     operator fun plus(obj : IVector) : IPoint
     operator fun minus(obj : IVector) : IPoint
 
+    operator fun plusAssign(obj : IPoint)
+
+    operator fun plusAssign(obj : IVector)
+    operator fun minusAssign(obj : IVector)
+
     fun distance(obj : IPoint) : Double
 
     operator fun compareTo(other : IPoint) =
@@ -54,7 +65,7 @@ interface IPoint{
             else 1
 }
 
-class DecartVector (override val x : Double, override val y : Double) : IVector{
+class DecartVector (override var x : Double, override var y : Double) : IVector{
 
     override val length : Double
         get() = Math.sqrt(x * x + y * y)
@@ -70,16 +81,33 @@ class DecartVector (override val x : Double, override val y : Double) : IVector{
 
     override fun times(vec : IVector) = x * vec.x + y * vec.y
 
+
+
+    override fun plusAssign(obj : IVector){
+        x += obj.x
+        y += obj.y
+    }
+
+    override fun minusAssign(obj : IVector){
+        x -= obj.x
+        y -= obj.y
+    }
+
+    override fun timesAssign(scale : Double){
+        x *= scale
+        y *= scale
+    }
+
     val normal : DecartVector
         get() = this * (1.0/Math.max(1.0, length))
 
-    fun cos(vec : IVector) = (this * vec) / (length * vec.length)
+    fun cos(vec : IVector) = (x * vec.x + y * vec.y) / Math.max(0.1, (length * vec.length))
 
     val perpen : DecartVector
         get() = DecartVector(y, -x)
 }
 
-class DecartPoint (override val x : Double, override val y : Double) : IPoint {
+class DecartPoint (override var x : Double, override var y : Double) : IPoint {
 
     override fun plus(obj : IPoint) = DecartPoint(x = x + obj.x, y = y + obj.y)
 
@@ -88,6 +116,23 @@ class DecartPoint (override val x : Double, override val y : Double) : IPoint {
     override fun plus(obj : IVector) = DecartPoint(x = x + obj.x, y = y + obj.y)
 
     override fun minus(obj : IVector) = DecartPoint(x = x - obj.x, y = y - obj.y)
+
+
+
+    override fun plusAssign(obj : IPoint){
+        x += obj.x
+        y += obj.y
+    }
+
+    override fun plusAssign(obj : IVector){
+        x += obj.x
+        y += obj.y
+    }
+
+    override fun minusAssign(obj : IVector) {
+        x -= obj.x
+        y -= obj.y
+    }
 
     override fun distance(obj: IPoint): Double {
         val dx : Double = obj.x - x
@@ -206,27 +251,31 @@ class Enemy(id : String, position: DecartPoint, weight : Double, radius :Double,
 
     override fun pastTick() : IRemember{
         memory -= 1
-        position += speed
+        position.plusAssign(speed)
         return this
     }
 
     override fun effect(where : DecartPoint, hero: Hero) : Double{
         val offset = position - where
         val direction = hero.speed
+        val offsetHero = position - hero.position
 
-        val cos = Math.max(1.0, direction * offset / Math.max(0.5, (direction.length * offset.length)))
-        val distance = (offset.length + (position - hero.position).length) / 2
+        val cos = direction.cos(offset)
+        val distance = (offset.length + offsetHero.length) / 2
 
         if (1.2 * weight < hero.weight)
             return 4 * (1 + cos) * force * weight / hero.weight / distance
 
 
-        val offsetHero = position - hero.position
-        val nextDirection = where - hero.position
-        val cos2 = nextDirection.cos(offsetHero)
-        val sin = Math.sqrt(1 - cos2 * cos2)
+        if (hero.weight * 2.4 > weight && offset.length > splitDistance() || hero.weight * 1.2> weight && offset.length > hero.getSeenCircle(1).radius)
+            return 0.0
 
-        return if (weight< hero.weight * 1.2 ) -force / hero.weight / distance
+        val nextDirection = where - hero.position
+
+        val sin = 0.1 * Math.abs((where - position).perpen.cos(nextDirection))
+
+
+        return if (weight< hero.weight * 1.5 ) -force / hero.weight / distance
         else -10  * force * weight / hero.weight / distance
     }
 }
@@ -266,22 +315,23 @@ class HopeField(override val force : Double, val nearDistance : Double) : IPoten
     var t = 0.0
 
     override fun effect(where: DecartPoint, hero: Hero): Double {
-        val offset = position - where
+        val to_center = consts!!.CENTER - where
         val direction = hero.speed
-        //makeLog("\t\t HopeField effect")
-        //makeLog("\t\t where = {${where.x}, ${where.y}}")
-        //makeLog("\t\t direction = {${direction.x}, ${direction.y}}")
-        //makeLog("\t\t offset = {${offset.x}, ${offset.y}}")
-        //makeLog("\t\t cos = $cos")
-        //makeLog("\t\t (force * (0.5) / offset.length = ${force * (0.5) / offset.length}}")
+
         val rdp = world.getRadiusPerpen(hero.position)
-        val rdpcos = Math.abs(rdp.cos(where - hero.position)) + 0.05 * rdp.cos(direction) + 0.2 * (where - consts!!.CENTER).cos(direction)
-        val cos = 0.1 * direction.cos(where - hero.position)
-        makeLog("\t\t HopeField effect")
-        makeLog("\t\t where = {${where.x}, ${where.y}}")
-        makeLog("\t\t rdp = {${rdp.x}, ${rdp.y}}")
-        makeLog("\t\t rdpcos = $rdpcos")
-        return force / hero.weight  * (rdpcos + cos) / 30.0
+
+        val whcCos =  0.2 * (consts!!.CENTER - hero.position).cos(where - hero.position)
+        val rdpcos = 0.8*Math.abs(rdp.cos(where - hero.position)) + 0.1 * rdp.cos(where - hero.position)
+        val cos_n_d = 0.1 * rdp.cos(direction)
+        val cos_of_d = 0.1 * (where - consts!!.CENTER).cos(direction)
+        val cos = 0.3 * direction.cos(where - hero.position)
+        val sum_cos = rdpcos + cos + cos_n_d + cos_of_d + whcCos
+        val added =
+                if (where.x < 0.1 || where.y < 0.1 || where.x > consts!!.GAME_WIDTH - 0.1 || where.y > consts!!.GAME_HEIGHT - 0.1 )
+                    -10000.0
+                else
+                    0.0
+        return force / hero.weight  * sum_cos / (30.0 + Math.sqrt(to_center.length)) + added
     }
 
     fun check(where : DecartPoint){
@@ -325,19 +375,6 @@ class PotentialObject(var toMove : DecartPoint, val ch : Double = 0.0) : IPotent
 
 class PolarPotentialFields(var objects :List<PotentialObject>, val fields: List<IPotentialSource>){
     fun toMove() : DecartPoint{
-
-        objects = objects.filter {
-            var fl = true
-            for (hero in world.heroes) {
-                if (!fl) break
-                for (enemy in world.enemies) {
-                    if (!fl) break
-                    if (enemy.isTo(hero.position, it.toMove - hero.position) && enemy.weight > hero.weight * 1.1 && enemy.radius * 1.5 < (enemy.position - hero.position).length && (enemy.position - hero.position).length < hero.radius * 3)
-                        fl = false
-                }
-            }
-            fl
-        }
 
         for (obj in objects) {
             obj.refreshPotential()
@@ -475,6 +512,8 @@ class World(){
     fun minHeroSize() = heroes.map{ it.weight }.min()!!
 
     fun maxEnemySize() = enemies.map{ it.weight }.max() ?: 0.0
+
+    fun areSeenEnemy() = enemies.any{ it.memory == consts!!.GENERAL_MEMORY}
 }
 
 val world = World()
@@ -497,22 +536,22 @@ class SimpleStrategy : IStrategy{
 
     var world : World? = null
     val hopes = listOf(
-            HopeField(force = 1.0, nearDistance = 100.0)
+            HopeField(force = 0.5, nearDistance = 100.0)
     )
     val borders = listOf(
-            AngleField(force = 200.0, position = DecartPoint(x = 0.0, y = 0.0), nearDistance = 100.0),
-            AngleField(force = 200.0, position = DecartPoint(x = consts!!.GAME_WIDTH, y = 0.0), nearDistance = 100.0),
-            AngleField(force = 200.0, position = DecartPoint(x = 0.0, y = consts!!.GAME_HEIGHT), nearDistance = 100.0),
-            AngleField(force = 200.0, position = DecartPoint(x = consts!!.GAME_WIDTH, y = consts!!.GAME_HEIGHT), nearDistance = 100.0)
+            AngleField(force = 10.0, position = DecartPoint(x = 0.0, y = 0.0), nearDistance = 300.0),
+            AngleField(force = 10.0, position = DecartPoint(x = consts!!.GAME_WIDTH, y = 0.0), nearDistance = 300.0),
+            AngleField(force = 10.0, position = DecartPoint(x = 0.0, y = consts!!.GAME_HEIGHT), nearDistance = 300.0),
+            AngleField(force = 10.0, position = DecartPoint(x = consts!!.GAME_WIDTH, y = consts!!.GAME_HEIGHT), nearDistance = 300.0)
     )
 
     val toBorder : List<PotentialObject>
             get(){
                 if (to_border == null){
-                    to_border = (0..10).map { PotentialObject(DecartPoint(0.0, it * consts!!.GAME_HEIGHT/10.0))} +
-                            (0..10).map { PotentialObject(DecartPoint(consts!!.GAME_WIDTH, it * consts!!.GAME_HEIGHT/10.0))} +
-                            (1..9).map { PotentialObject(DecartPoint(0.0, 0.0),  -1.0)} +
-                            (1..9).map { PotentialObject(DecartPoint(it * consts!!.GAME_WIDTH/10.0, consts!!.GAME_HEIGHT))}
+                    to_border = (0..20).map { PotentialObject(DecartPoint(0.0, it * consts!!.GAME_HEIGHT/20.0))} +
+                            (0..20).map { PotentialObject(DecartPoint(consts!!.GAME_WIDTH, it * consts!!.GAME_HEIGHT/20.0))} +
+                            (1..19).map { PotentialObject(DecartPoint(it * consts!!.GAME_WIDTH/20.0, 0.0))} +
+                            (1..19).map { PotentialObject(DecartPoint(it * consts!!.GAME_WIDTH/20.0, consts!!.GAME_HEIGHT))}
                 }
                 return to_border!!
             }
@@ -521,22 +560,11 @@ class SimpleStrategy : IStrategy{
 
     private fun findFood() : Food? = world!!.foods.firstOrNull()
 
-    private fun potentialObjects() = toBorder +
-            world!!.enemies.map { PotentialObject(it.position)} +
-            world!!.foods.filter{
-                        it.position.x > 50 && it.position.y > 50 && consts!!.GAME_WIDTH - it.position.x > 50 && consts!!.GAME_HEIGHT - it.position.y > 50
-                    }.filter {
-                        var fl = true
-                        for (hero in world!!.heroes) {
-                            if (!fl) break
-                            for (enemy in world!!.enemies) {
-                                if (!fl) break
-                                if (enemy.weight > hero.weight * 1.1 && (enemy.position - it.position).length < hero.radius * 3 && (enemy.position - hero.position).length < hero.radius * 4)
-                                    fl = false
-                            }
-                        }
-                        fl
-                    }.take(10).map { PotentialObject(it.position)}
+    private fun potentialObjects() = toBorder //+
+            //world!!.enemies.map { PotentialObject(it.position)} +
+            //world!!.foods.filter{
+             //           it.position.x > 50 && it.position.y > 50 && consts!!.GAME_WIDTH - it.position.x > 50 && consts!!.GAME_HEIGHT - it.position.y > 50
+             //       }.take(10).map { PotentialObject(it.position)}
 
     override fun step(world : World) : StepInfo {
         this.world = world
@@ -560,7 +588,7 @@ class SimpleStrategy : IStrategy{
             }
 
 
-        val fields =hopes +world.enemies + world.foods
+        val fields = hopes + world.enemies + world.foods + borders
 
         val toMove = PolarPotentialFields(potentialObjects(), fields).toMove()
         makeLog("toMove = { ${toMove.x}, ${toMove.y} }")
