@@ -31,10 +31,6 @@ interface IVector{
     operator fun times(vec : IVector) : Double
 
 
-    operator fun plusAssign(obj : IVector)
-    operator fun minusAssign(obj : IVector)
-
-    operator fun timesAssign(scale : Double)
 
     operator fun compareTo(other : IVector) =
             if (x == other.x && y == other.y) 0
@@ -52,10 +48,6 @@ interface IPoint{
     operator fun plus(obj : IVector) : IPoint
     operator fun minus(obj : IVector) : IPoint
 
-    operator fun plusAssign(obj : IPoint)
-
-    operator fun plusAssign(obj : IVector)
-    operator fun minusAssign(obj : IVector)
 
     fun distance(obj : IPoint) : Double
 
@@ -82,22 +74,6 @@ class DecartVector (override var x : Double, override var y : Double) : IVector{
     override fun times(vec : IVector) = x * vec.x + y * vec.y
 
 
-
-    override fun plusAssign(obj : IVector){
-        x += obj.x
-        y += obj.y
-    }
-
-    override fun minusAssign(obj : IVector){
-        x -= obj.x
-        y -= obj.y
-    }
-
-    override fun timesAssign(scale : Double){
-        x *= scale
-        y *= scale
-    }
-
     val normal : DecartVector
         get() = this * (1.0/Math.max(1.0, length))
 
@@ -118,21 +94,6 @@ class DecartPoint (override var x : Double, override var y : Double) : IPoint {
     override fun minus(obj : IVector) = DecartPoint(x = x - obj.x, y = y - obj.y)
 
 
-
-    override fun plusAssign(obj : IPoint){
-        x += obj.x
-        y += obj.y
-    }
-
-    override fun plusAssign(obj : IVector){
-        x += obj.x
-        y += obj.y
-    }
-
-    override fun minusAssign(obj : IVector) {
-        x -= obj.x
-        y -= obj.y
-    }
 
     override fun distance(obj: IPoint): Double {
         val dx : Double = obj.x - x
@@ -163,8 +124,6 @@ interface IRemember{
 interface IPotential{
     var potential : Double
 
-    operator fun plusAssign(field : IPotentialSource)
-    operator fun timesAssign(field : IPotentialSource)
 
     fun refreshPotential(){
         potential = 0.0
@@ -176,7 +135,7 @@ interface IPotentialSource{
     val force : Double
     val position : DecartPoint
 
-    fun effect(where : DecartPoint, hero: Hero) : Double
+    fun effect(player: Player) : DecartVector
 }
 
 abstract class Object(override var position : DecartPoint) : IRemember, IPotentialSource{
@@ -219,73 +178,8 @@ abstract class Player(id : String, position: DecartPoint, weight : Double, var s
         val cos = Math.sqrt(1.0 - sin * sin)
         return vec.cos(position - pos) > cos
     }
-}
-
-class Food(position : DecartPoint) : Object(position){
-    override fun effect(where : DecartPoint, hero: Hero) : Double{
-        val offset = position - where
-        val direction = hero.speed
-        val cos = Math.max(1.0, direction * offset / Math.max(0.5, (direction.length * offset.length)))
-        val distance = (offset.length + (position - hero.position).length) / 2
-        val rdp = world.getRadiusPerpen(hero.position)
-        val rdpcos = Math.abs(rdp.cos(position - hero.position))
 
 
-
-        return force * consts!!.FOOD_MASS / hero.weight  / distance
-    }
-}
-
-class Ejection(position: DecartPoint, val pId : String) : Object(position){
-    override fun effect(where : DecartPoint, hero: Hero) : Double = TODO()
-}
-
-class Virus(id : String, position: DecartPoint, weight : Double) : CircularObject(id, position, weight){
-
-    override fun effect(where : DecartPoint, hero: Hero) : Double = TODO()
-}
-
-class Enemy(id : String, position: DecartPoint, weight : Double, radius :Double, speed : DecartVector)
-    : Player(id, position, weight, speed){
-
-
-    override fun pastTick() : IRemember{
-        memory -= 1
-        position.plusAssign(speed)
-        return this
-    }
-
-    override fun effect(where : DecartPoint, hero: Hero) : Double{
-        val offset = position - where
-        val direction = hero.speed
-        val offsetHero = position - hero.position
-
-        val cos = direction.cos(offset)
-        val distance = (offset.length + offsetHero.length) / 2
-
-        if (1.2 * weight < hero.weight)
-            return 4 * (1 + cos) * force * weight / hero.weight / distance
-
-
-        if (hero.weight * 2.4 > weight && offset.length > splitDistance() || hero.weight * 1.2> weight && offset.length > hero.getSeenCircle(1).radius)
-            return 0.0
-
-        val nextDirection = where - hero.position
-
-        val sin = 0.1 * Math.abs((where - position).perpen.cos(nextDirection))
-
-
-        return if (weight< hero.weight * 1.15 ) -force / hero.weight / distance
-        else -10  * force * weight / hero.weight / distance
-    }
-}
-
-class SeenCircle(override val position: DecartPoint, override val radius: Double) : ICircle
-
-class Hero(id : String, position: DecartPoint, weight : Double, radius :Double, speed : DecartVector)
-    : Player(id, position, weight, speed){
-
-    override fun effect(where : DecartPoint, hero: Hero) : Double = TODO()
     fun getSeenCircle(cnt : Int) : SeenCircle {
         val sr =
                 if (cnt == 1)
@@ -302,6 +196,66 @@ class Hero(id : String, position: DecartPoint, weight : Double, radius :Double, 
 
     }
 
+    override fun effect(player : Player) : DecartVector{
+        val direction = player.speed
+        val offset = position - player.position
+
+        val cos = direction.cos(offset)
+        val distance = offset.length
+
+        if (1.2 * weight < player.weight)
+            return offset.normal * (4 * (1 + cos) * force * weight / player.weight / distance)
+
+
+        if (player.weight * 2.4 > weight && offset.length > splitDistance() || player.weight * 1.2> weight && offset.length > player.getSeenCircle(1).radius)
+            return DecartVector(0.0, 0.0)
+
+
+        return if (weight< player.weight * 1.15 ) offset.normal * (-force / player.weight / distance)
+        else offset.normal * (-10  * force * weight / player.weight / distance)
+    }
+}
+
+class Food(position : DecartPoint) : Object(position){
+    override fun effect(player : Player) : DecartVector{
+        val offset = position - player.position
+        val direction = player.speed
+        val cos = Math.max(1.0, direction * offset / Math.max(0.5, (direction.length * offset.length)))
+        val distance = offset.length
+        val rdp = world.getRadiusPerpen(player.position)
+        val rdpcos = Math.abs(rdp.cos(position - player.position))
+
+
+
+        return offset.normal * (force * consts!!.FOOD_MASS / player.weight  / distance)
+    }
+}
+
+class Ejection(position: DecartPoint, val pId : String) : Object(position){
+    override fun effect(player : Player) : DecartVector = TODO()
+}
+
+class Virus(id : String, position: DecartPoint, weight : Double) : CircularObject(id, position, weight){
+
+    override fun effect(player : Player) : DecartVector = TODO()
+}
+
+class Enemy(id : String, position: DecartPoint, weight : Double, radius :Double, speed : DecartVector)
+    : Player(id, position, weight, speed){
+
+
+    override fun pastTick() : IRemember{
+        memory -= 1
+        position += speed
+        return this
+    }
+}
+
+class SeenCircle(override val position: DecartPoint, override val radius: Double) : ICircle
+
+class Hero(id : String, position: DecartPoint, weight : Double, radius :Double, speed : DecartVector)
+    : Player(id, position, weight, speed){
+
 }
 
 
@@ -314,24 +268,14 @@ class HopeField(override val force : Double, val nearDistance : Double) : IPoten
 
     var t = 0.0
 
-    override fun effect(where: DecartPoint, hero: Hero): Double {
-        val to_center = consts!!.CENTER - where
-        val direction = hero.speed
+    override fun effect(player : Player) : DecartVector {
+        val to_center = consts!!.CENTER - player.position
+        val direction = player.speed
 
-        val rdp = world.getRadiusPerpen(hero.position)
+        var rdp = world.getRadiusPerpen(player.position)
 
-        val whcCos =  0.2 * (consts!!.CENTER - hero.position).cos(where - hero.position)
-        val rdpcos = 0.8*Math.abs(rdp.cos(where - hero.position)) + 0.1 * rdp.cos(where - hero.position)
-        val cos_n_d = 0.1 * rdp.cos(direction)
-        val cos_of_d = 0.1 * (where - consts!!.CENTER).cos(direction)
-        val cos = 0.3 * direction.cos(where - hero.position)
-        val sum_cos = rdpcos + cos + cos_n_d + cos_of_d + whcCos
-        val added =
-                if (where.x < 0.1 || where.y < 0.1 || where.x > consts!!.GAME_WIDTH - 0.1 || where.y > consts!!.GAME_HEIGHT - 0.1 )
-                    -10000.0
-                else
-                    0.0
-        return force / hero.weight  * sum_cos / (30.0 + Math.sqrt(to_center.length)) + added
+        if (rdp.cos(direction) < 0) rdp *= -1.0
+        return (rdp.normal + to_center.normal * 0.1 + direction.normal * 0.1)*(force / player.weight / (30.0 + Math.sqrt(to_center.length)))
     }
 
     fun check(where : DecartPoint){
@@ -344,52 +288,39 @@ class HopeField(override val force : Double, val nearDistance : Double) : IPoten
 
 class AngleField(override val force : Double, override val position: DecartPoint, val nearDistance: Double ) : IPotentialSource{
 
-    override fun effect(where : DecartPoint, hero: Hero) : Double{
-        val distance = Math.abs(position.x - where.x) + Math.abs(position.y - where.y)
-        if (distance > nearDistance) return 0.0
-        val cos = (where - hero.position).cos(position - hero.position)
-        return -force / hero.weight / (30.0 + Math.sqrt((where - position).length))  * (1.5 + cos)
+    override fun effect(player : Player) : DecartVector{
+        val offset = position - player.position
+        val distance = Math.abs(position.x - player.position.x) + Math.abs(position.y - player.position.y)
+        if (distance > nearDistance) return DecartVector(0.0, 0.0)
+        return offset.normal * (-force / player.weight / (30.0 + Math.sqrt(offset.length)))
 
     }
 }
 
 
-class PotentialObject(var toMove : DecartPoint, val ch : Double = 0.0) : IPotential{
+class PotentialObject(var toMove : DecartPoint) : IPotential{
     override var potential = 0.0
 
-    override fun plusAssign(field: IPotentialSource){
-        potential += world.heroes.map {
-            val dir = (toMove - it.position).normal * Math.max(it.maxSpeed() / 3.0, it.speed.length)
-            val pos = it.position + dir
-            if (pos.x < it.radius || pos.x > consts!!.GAME_WIDTH - it.radius||pos.y < it.radius || pos.y > consts!!.GAME_HEIGHT - it.radius) -1000000.0
-            else field.effect(pos, it)
-        }.sum() + ch
-    }
-
-    override fun timesAssign(field: IPotentialSource) {
-        potential *= world.heroes.map {
-            val dir = (toMove - it.position).normal
-                field.effect(it.position + dir, it)
-        }.sum() + ch
-    }
 }
 
-class PolarPotentialFields(var objects :List<PotentialObject>, val fields: List<IPotentialSource>){
+class PolarPotentialFields(var objects :List<Player>, val fields: List<IPotentialSource>, val points : List<PotentialObject>){
     fun toMove() : DecartPoint{
 
-        for (obj in objects) {
-            obj.refreshPotential()
-        }
+
+        points.forEach { it.refreshPotential() }
 
         for (obj in objects){
-            var flag = false
 
+            var res = DecartVector(0.0, 0.0)
             for (field in fields){
-                obj += field
+                res += field.effect(obj)
+            }
+            for (point in points){
+                point.potential += res.length * (point.toMove - obj.position).cos(res)
             }
         }
 
-        return objects.maxBy { it.potential }!!.toMove
+        return points.maxBy { it.potential }!!.toMove
     }
 }
 
@@ -412,10 +343,6 @@ class Consts(config : JSONObject){
     val GENERAL_FORCE = 100.0
 
 }
-
-
-
-
 
 class World(){
     var heroes = listOf<Hero>()
@@ -591,7 +518,7 @@ class SimpleStrategy : IStrategy{
 
         val fields = hopes + world.enemies + world.foods.take(25) + borders
 
-        val toMove = PolarPotentialFields(potentialObjects(), fields).toMove()
+        val toMove = PolarPotentialFields(world.heroes, fields, potentialObjects()).toMove()
         makeLog("toMove = { ${toMove.x}, ${toMove.y} }")
         makeLog("from = { ${world.heroes[0].position.x}, ${world.heroes[0].position.y} }")
         return StepInfo(toMove = toMove, split = needSpleet)
