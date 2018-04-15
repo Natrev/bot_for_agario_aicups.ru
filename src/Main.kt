@@ -246,7 +246,7 @@ class Food(position : DecartPoint) : Object(position){
 
 
 
-        return offset.normal * ((1.0 + cos)*force * consts!!.FOOD_MASS / player.weight  / distance)
+        return offset.normal * ((1 + cos) * force * consts!!.FOOD_MASS / player.weight  / distance)
     }
 }
 
@@ -259,6 +259,8 @@ class Virus(id : String, position: DecartPoint, weight : Double) : CircularObjec
     override fun effect(player : Player) : DecartVector{
         val offset = position - player.position
         val distance = offset.length
+        if (!world.warning && player.weight > 120.0)
+            return DecartVector(0.0, 0.0)
         if (distance > player.radius * 3 || player.weight < 120.0) return DecartVector(0.0, 0.0)
         return offset.normal * (-force / player.weight / (30.0 + Math.sqrt(offset.length)))
     }
@@ -369,14 +371,16 @@ class PolarPotentialFields(var objects :List<Player>, val fields: List<IPotentia
             for (point in points){
                 point.potential += res.length * (point.toMove - obj.position).cos(res)
 
-                if (point.toMove.y == 0.0 && obj.position.y < 2 * obj.radius)
-                    point.potential -= 100 / (obj.position.y + 1)
-                if (point.toMove.y == consts!!.GAME_HEIGHT && consts!!.GAME_HEIGHT - obj.position.y < 2 * obj.radius)
-                    point.potential -= 100 / (consts!!.GAME_HEIGHT - obj.position.y + 1)
-                if (point.toMove.x == 0.0 && obj.position.x < 2 * obj.radius)
-                    point.potential -= 100 / (obj.position.x + 1)
-                if (point.toMove.x == consts!!.GAME_WIDTH && consts!!.GAME_WIDTH - obj.position.x < 2 * obj.radius)
-                    point.potential -= 100 / (consts!!.GAME_WIDTH - obj.position.x + 1)
+                if (world.warning) {
+                    if (point.toMove.y == 0.0 && obj.position.y < obj.radius * 2)
+                        point.potential -= 100000 / (obj.position.y + 1)
+                    if (point.toMove.y == consts!!.GAME_HEIGHT && consts!!.GAME_HEIGHT - obj.position.y < obj.radius * 2)
+                        point.potential -= 100000 / (consts!!.GAME_HEIGHT - obj.position.y )
+                    if (point.toMove.x == 0.0 && obj.position.x < obj.radius * 2)
+                        point.potential -= 100000 / (obj.position.x + 1)
+                    if (point.toMove.x == consts!!.GAME_WIDTH && consts!!.GAME_WIDTH - obj.position.x < obj.radius * 2)
+                        point.potential -= 100000 / (consts!!.GAME_WIDTH - obj.position.x + 1)
+                }
             }
         }
 
@@ -410,6 +414,8 @@ class World(){
     var ejetions = listOf<Ejection>()
     var viruses = listOf<Virus>()
     var enemies = listOf<Enemy>()
+
+    var warning = false
 
     fun getRadiusPerpen(pos : DecartPoint) = (pos - consts!!.CENTER).perpen
 
@@ -524,17 +530,17 @@ class SimpleStrategy : IStrategy{
 
     var world : World? = null
     val hopes = listOf(
-            HopeField(force = 100.0, nearDistance = 100.0)
+            HopeField(force = 10.0, nearDistance = 100.0)
     )
     val borders = listOf(
             AngleField(force = 100.0, position = DecartPoint(x = 0.0, y = 0.0), nearDistance = 100.0),
             AngleField(force = 100.0, position = DecartPoint(x = consts!!.GAME_WIDTH, y = 0.0), nearDistance = 100.0),
             AngleField(force = 100.0, position = DecartPoint(x = 0.0, y = consts!!.GAME_HEIGHT), nearDistance = 100.0),
-            AngleField(force = 100.0, position = DecartPoint(x = consts!!.GAME_WIDTH, y = consts!!.GAME_HEIGHT), nearDistance = 100.0),
-            BorderField(force = 100.0, position = DecartPoint(x = 0.0, y = -1.0), nearDistance = 100.0),
-            BorderField(force = 100.0, position = DecartPoint(x = -1.0, y = 0.0), nearDistance = 100.0),
-            BorderField(force = 100.0, position = DecartPoint(x = -1.0, y = consts!!.GAME_HEIGHT), nearDistance = 100.0),
-            BorderField(force = 100.0, position = DecartPoint(x = consts!!.GAME_WIDTH, y = -1.0), nearDistance = 100.0)
+            AngleField(force = 100.0, position = DecartPoint(x = consts!!.GAME_WIDTH, y = consts!!.GAME_HEIGHT), nearDistance = 100.0)//,
+            //BorderField(force = 100.0, position = DecartPoint(x = 0.0, y = -1.0), nearDistance = 100.0),
+            //BorderField(force = 100.0, position = DecartPoint(x = -1.0, y = 0.0), nearDistance = 100.0),
+            //BorderField(force = 100.0, position = DecartPoint(x = -1.0, y = consts!!.GAME_HEIGHT), nearDistance = 100.0),
+            //BorderField(force = 100.0, position = DecartPoint(x = consts!!.GAME_WIDTH, y = -1.0), nearDistance = 100.0)
     )
 
     val toBorder : List<PotentialObject>
@@ -586,19 +592,21 @@ class SimpleStrategy : IStrategy{
                         noNeedSpleet = true
 
                 }
-                for (virus in world.viruses) {
-                    if (needSpleet) break
-                    if (120.0 <= hero.weight && hero.speed.length > 0.5 &&
-                            hero.speed.cos(virus.position - hero.position) > 0.96 &&
-                            (virus.position - hero.position).length < hero.splitDistance())
-                        noNeedSpleet = true
+                if (world.areSeenEnemy())
+                    for (virus in world.viruses) {
+                        if (needSpleet) break
+                        if (120.0 <= hero.weight && hero.speed.length > 0.5 &&
+                                hero.speed.cos(virus.position - hero.position) > 0.96 &&
+                                (virus.position - hero.position).length < hero.splitDistance())
+                            noNeedSpleet = true
 
-                }
+                    }
             }
 
+        world.warning = world.areSeenEnemy()
         needSpleet = !noNeedSpleet && needSpleet
 
-        val fields = hopes + world.enemies + world.foods + borders + world.viruses
+        val fields = hopes + world.enemies + world.foods + world.viruses
 
         val toMove = PolarPotentialFields(world.heroes, fields, potentialObjects()).toMove()
         if (needSpleet) tick_to_spleet = 50
