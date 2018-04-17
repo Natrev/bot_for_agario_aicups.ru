@@ -447,7 +447,7 @@ class PolarPotentialFields(var objects :List<Player>, var foods : List<Food>, va
 
                 if ((obj.position - fd.position).cos(obj.speed) > 0.7|| obj.speed.length < 1 || (fd.position - obj.position).cos(obj.speed)> 0.5 ) {
                     val vc =
-                            if (obj.toTake2(fd.position) || obj.speed.length < 1)
+                            if (obj.toTake2(fd.position) || obj.speed.length < 1 || objects.size > 1)
                                 fd.effect(obj)
                             else
                                 obj.speed.normal * (-0.1 * fd.effect(obj).length)
