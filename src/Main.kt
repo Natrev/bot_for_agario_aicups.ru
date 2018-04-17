@@ -375,7 +375,7 @@ class HopeField(override val force : Double, val nearDistance : Double) : IPoten
         var rdp = world.getRadiusPerpen(player.position)
 
         if (rdp.cos(direction) < 0) rdp *= -1.0
-        return (rdp.normal + to_center.normal * 0.3 + direction.normal * 0.1)*(force / player.weight / (30.0 + Math.sqrt(to_center.length)))
+        return (rdp.normal + to_center.normal *( (to_center.length - consts!!.GAME_WIDTH / 4) / (consts!!.GAME_WIDTH / 2)) + direction.normal * 0.1)*(force / player.weight / (30.0 + Math.sqrt(to_center.length)))
     }
 
     fun check(where : DecartPoint){
@@ -472,13 +472,24 @@ class PolarPotentialFields(var objects :List<Player>, var foods : List<Food>, va
                 point.potential += res.length * (point.toMove - obj.position).cos(res)
 
                 if (world.warning) {
-                    if (point.toMove.y == 0.0 && obj.position.y < obj.radius * 2)
+                    if (point.toMove.y == 0.0 && obj.position.y < obj.radius * 3)
                         point.potential -= 10000000 / (obj.position.y + 1)
-                    if (point.toMove.y == consts!!.GAME_HEIGHT && consts!!.GAME_HEIGHT - obj.position.y < obj.radius * 2)
+                    if (point.toMove.y == consts!!.GAME_HEIGHT && consts!!.GAME_HEIGHT - obj.position.y < obj.radius * 3)
                         point.potential -= 10000000 / (consts!!.GAME_HEIGHT - obj.position.y )
-                    if (point.toMove.x == 0.0 && obj.position.x < obj.radius * 2)
+                    if (point.toMove.x == 0.0 && obj.position.x < obj.radius * 3)
                         point.potential -= 10000000 / (obj.position.x + 1)
-                    if (point.toMove.x == consts!!.GAME_WIDTH && consts!!.GAME_WIDTH - obj.position.x < obj.radius * 2)
+                    if (point.toMove.x == consts!!.GAME_WIDTH && consts!!.GAME_WIDTH - obj.position.x < obj.radius * 3)
+                        point.potential -= 10000000 / (consts!!.GAME_WIDTH - obj.position.x + 1)
+                }
+                else{
+
+                    if (point.toMove.y == 0.0 && obj.position.y < obj.radius * 1.5)
+                        point.potential -= 10000000 / (obj.position.y + 1)
+                    if (point.toMove.y == consts!!.GAME_HEIGHT && consts!!.GAME_HEIGHT - obj.position.y < obj.radius * 1.5)
+                        point.potential -= 10000000 / (consts!!.GAME_HEIGHT - obj.position.y )
+                    if (point.toMove.x == 0.0 && obj.position.x < obj.radius * 1.5)
+                        point.potential -= 10000000 / (obj.position.x + 1)
+                    if (point.toMove.x == consts!!.GAME_WIDTH && consts!!.GAME_WIDTH - obj.position.x < obj.radius * 1.5)
                         point.potential -= 10000000 / (consts!!.GAME_WIDTH - obj.position.x + 1)
                 }
                 if (obj.speed.length / consts!!.INERTION_FACTOR > 1.5){
