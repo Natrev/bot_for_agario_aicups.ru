@@ -2,6 +2,11 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.FileWriter
 import java.util.*
+import javax.management.Query
+import kotlin.collections.ArrayList
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
 
 val isDebug = false
 
@@ -73,6 +78,13 @@ class DecartVector (override var x : Double, override var y : Double) : IVector{
 
     override fun times(vec : IVector) = x * vec.x + y * vec.y
 
+    fun turn(angle : Double) = DecartVector(cos(angle) * x - sin(angle) * y, sin(angle) * x + cos(angle) * y)
+
+    fun turnWithToOX(pt : DecartPoint) : Pair<DecartVector, DecartPoint>{
+        val v = if (y > 0) turn(angle) else turn(PI - angle)
+        val p =  if (y > 0) pt.turn(angle) else pt.turn(PI - angle)
+        return Pair(v, p)
+    }
 
     val normal : DecartVector
         get() = this * (1.0/Math.max(1.0, length))
@@ -94,6 +106,7 @@ class DecartPoint (override var x : Double, override var y : Double) : IPoint {
     override fun minus(obj : IVector) = DecartPoint(x = x - obj.x, y = y - obj.y)
 
 
+    fun turn(angle : Double) = DecartPoint(cos(angle) * x - sin(angle) * y, sin(angle) * x + cos(angle) * y)
 
     override fun distance(obj: IPoint): Double {
         val dx : Double = obj.x - x
@@ -155,12 +168,19 @@ abstract class CircularObject(val id : String, position : DecartPoint, var weigh
 abstract class Player(id : String, position: DecartPoint, weight : Double, var speed : DecartVector)
     : CircularObject(id, position, weight), ICircle{
 
+    override var memory = consts!!.GENERAL_MEMORY * 3
     override val radius : Double
         get() = 2 * Math.sqrt(weight)
 
     fun maxSpeed() = consts!!.SPEED_FACTOR / weight
 
     fun splitDistance() = Math.abs(64 - maxSpeed() * maxSpeed())/(2 * consts!!.VISCOSITY)
+
+    override fun pastTick() : IRemember{
+        memory -= 1
+        position += speed
+        return this
+    }
 
     fun refresh(position: DecartPoint, weight : Double) : Player{
         if (memory + 1 == consts!!.GENERAL_MEMORY)
@@ -179,6 +199,60 @@ abstract class Player(id : String, position: DecartPoint, weight : Double, var s
         return vec.cos(position - pos) > cos
     }
 
+
+
+    fun changeSpeed(speed : DecartVector, vector : DecartVector) : DecartVector {
+        val nv = vector.normal
+        val dx = (nv.x * maxSpeed() - speed.x) * consts!!.INERTION_FACTOR / weight
+        val dy = (nv.y * maxSpeed()- speed.y) * consts!!.INERTION_FACTOR / weight
+        return DecartVector(dx, dy)
+    }
+
+    fun toTake(pos : DecartPoint) : Boolean{
+        val offset = position - pos
+        var perpen = speed.perpen
+        var cos = offset.cos(perpen)
+        if (cos < 0){
+            perpen *= -1.0
+            cos *= -1.0
+        }
+        val angle = Math.acos(cos)
+        val a2 = PI - angle * 2
+        val r = offset.length * (sin(angle)/sin(a2))
+        val a = speed.length * speed.length / r
+        val av = changeSpeed(speed, perpen).length
+        //makeLog("offset: {${offset.x}, ${offset.y}}")
+        //makeLog("perpen: {${perpen.x}, ${perpen.y}}")
+        //makeLog("cos: ${cos}")
+        //makeLog("angle: ${angle}")
+        //makeLog("a: $a")
+        //makeLog("av: $av")
+
+        return a < av * 3.0
+    }
+
+    fun toTake2(pos : DecartPoint) : Boolean{
+        val offset = position - pos
+        var perpen = speed.perpen
+        var cos = offset.cos(perpen)
+        if (cos < 0){
+            perpen *= -1.0
+            cos *= -1.0
+        }
+        val angle = Math.acos(cos)
+        val a2 = PI - angle * 2
+        val r = offset.length * (sin(angle)/sin(a2))
+        val a = speed.length * speed.length / r
+        val av = changeSpeed(speed, perpen).length
+        //makeLog("offset: {${offset.x}, ${offset.y}}")
+        //makeLog("perpen: {${perpen.x}, ${perpen.y}}")
+        //makeLog("cos: ${cos}")
+        //makeLog("angle: ${angle}")
+        //makeLog("a: $a")
+        //makeLog("av: $av")
+
+        return a < av * 1.2
+    }
 
     fun getSeenCircle(cnt : Int) : SeenCircle {
         val sr =
@@ -207,7 +281,7 @@ abstract class Player(id : String, position: DecartPoint, weight : Double, var s
             return offset.normal * (4 * (1 + cos) * force * weight / player.weight / distance)
 
 
-        if (offset.length > player.getSeenCircle(2).radius || (1.2 * weight < player.weight))
+        if (offset.length > player.getSeenCircle(2).radius && player.weight > weight * 0.6 || offset.length > splitDistance() || (1.2 * weight < player.weight))
             return DecartVector(0.0, 0.0)
 
         var vec =
@@ -230,7 +304,7 @@ abstract class Player(id : String, position: DecartPoint, weight : Double, var s
             vec += DecartVector(0.0, -1.0) * ((consts!!.GAME_HEIGHT - player.position.y) / (consts!!.GAME_HEIGHT - position.y))
         }
 
-        return if (weight< player.weight * 1.15 ) vec * (force / player.weight / distance)
+        return if (weight< player.weight * 1.15 ) vec * (force / player.weight / distance )
         else vec * (7  * force * weight / player.weight / distance)
     }
 }
@@ -259,10 +333,10 @@ class Virus(id : String, position: DecartPoint, weight : Double) : CircularObjec
     override fun effect(player : Player) : DecartVector{
         val offset = position - player.position
         val distance = offset.length
-        if (!world.warning && player.weight > 120.0)
+        if (!world.warning || player.weight > 120.0)
             return DecartVector(0.0, 0.0)
         if (distance > player.radius * 3 || player.weight < 120.0) return DecartVector(0.0, 0.0)
-        return offset.normal * (-force / player.weight / (30.0 + Math.sqrt(offset.length)))
+        return offset.normal * (-force / consts!!.VISCOSITY / (30.0 + Math.sqrt(offset.length)))
     }
 }
 
@@ -301,7 +375,7 @@ class HopeField(override val force : Double, val nearDistance : Double) : IPoten
         var rdp = world.getRadiusPerpen(player.position)
 
         if (rdp.cos(direction) < 0) rdp *= -1.0
-        return (rdp.normal + to_center.normal * 0.1 + direction.normal * 0.1)*(force / player.weight / (30.0 + Math.sqrt(to_center.length)))
+        return (rdp.normal + to_center.normal * 0.3 + direction.normal * 0.1)*(force / player.weight / (30.0 + Math.sqrt(to_center.length)))
     }
 
     fun check(where : DecartPoint){
@@ -351,16 +425,42 @@ class BorderField(override val force : Double, override val position: DecartPoin
 
 class PotentialObject(var toMove : DecartPoint) : IPotential{
     override var potential = 0.0
+    var tmp_potential = 0.0
+
+    fun apply(){
+        potential += tmp_potential
+        tmp_potential = 0.0
+    }
 
 }
 
 
 
-class PolarPotentialFields(var objects :List<Player>, val fields: List<IPotentialSource>, val points : List<PotentialObject>){
+class PolarPotentialFields(var objects :List<Player>, var foods : List<Food>, val fields: List<IPotentialSource>, val points : List<PotentialObject>){
     fun toMove() : DecartPoint{
 
 
         points.forEach { it.refreshPotential() }
+
+        for (fd in foods){
+            for (obj in objects){
+
+                if (obj.toTake(fd.position) || obj.speed.length < 3) {
+                    val vc =
+                            if (obj.toTake2(fd.position) || obj.speed.length < 3)
+                                fd.effect(obj)
+                            else
+                                obj.speed.normal * (-1.0 * fd.effect(obj).length)
+                    for (pt in points){
+                        pt.tmp_potential = Math.max(pt.tmp_potential,vc.length * (pt.toMove - obj.position).cos(vc))
+                    }
+                }
+
+            }
+            for (pt in points){
+                pt.apply()
+            }
+        }
 
         for (obj in objects){
 
@@ -373,19 +473,53 @@ class PolarPotentialFields(var objects :List<Player>, val fields: List<IPotentia
 
                 if (world.warning) {
                     if (point.toMove.y == 0.0 && obj.position.y < obj.radius * 2)
-                        point.potential -= 100000 / (obj.position.y + 1)
+                        point.potential -= 10000000 / (obj.position.y + 1)
                     if (point.toMove.y == consts!!.GAME_HEIGHT && consts!!.GAME_HEIGHT - obj.position.y < obj.radius * 2)
-                        point.potential -= 100000 / (consts!!.GAME_HEIGHT - obj.position.y )
+                        point.potential -= 10000000 / (consts!!.GAME_HEIGHT - obj.position.y )
                     if (point.toMove.x == 0.0 && obj.position.x < obj.radius * 2)
-                        point.potential -= 100000 / (obj.position.x + 1)
+                        point.potential -= 10000000 / (obj.position.x + 1)
                     if (point.toMove.x == consts!!.GAME_WIDTH && consts!!.GAME_WIDTH - obj.position.x < obj.radius * 2)
-                        point.potential -= 100000 / (consts!!.GAME_WIDTH - obj.position.x + 1)
+                        point.potential -= 10000000 / (consts!!.GAME_WIDTH - obj.position.x + 1)
+                }
+                if (obj.speed.length / consts!!.INERTION_FACTOR > 1.5){
+
+                    point.potential += -100.0 * (point.toMove - obj.position).cos(obj.speed)
+
                 }
             }
         }
 
         return points.maxBy { it.potential }!!.toMove
     }
+}
+
+data class QueryInfo(val x : Int, val y : Int, val sp : Int)
+
+class InertionPrecalc(val weight : Double, val ddist : Double, val ptCnt : Int, val vectors : List<DecartVector>){
+    val matrix = Array(ptCnt, {Array(ptCnt, {Array(ptCnt,{-1})})})
+
+    val maxSpeed = consts!!.SPEED_FACTOR / weight
+    val A = consts!!.INERTION_FACTOR / weight
+
+    fun precalc(){
+        val cc = consts!!
+        val q = ArrayList<QueryInfo>()
+        val p = ArrayList<QueryInfo>()
+        q.add(QueryInfo(0,0,0))
+        p.add(QueryInfo(0,0,0))
+        var left = 0
+        var right = 1
+        while (left < right){
+            val cur = q[left]
+            left += 1
+            for (v in vectors){
+            }
+
+
+        }
+    }
+
+
 }
 
 class Consts(config : JSONObject){
@@ -405,6 +539,9 @@ class Consts(config : JSONObject){
     //custom
     val GENERAL_MEMORY = 100.0
     val GENERAL_FORCE = 100.0
+
+
+
 
 }
 
@@ -544,25 +681,25 @@ class SimpleStrategy : IStrategy{
     )
 
     val toBorder : List<PotentialObject>
-            get(){
-                if (to_border == null){
-                    to_border = (0..20).map { PotentialObject(DecartPoint(0.0, it * consts!!.GAME_HEIGHT/20.0))} +
-                            (0..20).map { PotentialObject(DecartPoint(consts!!.GAME_WIDTH, it * consts!!.GAME_HEIGHT/20.0))} +
-                            (1..19).map { PotentialObject(DecartPoint(it * consts!!.GAME_WIDTH/20.0, 0.0))} +
-                            (1..19).map { PotentialObject(DecartPoint(it * consts!!.GAME_WIDTH/20.0, consts!!.GAME_HEIGHT))}
-                }
-                return to_border!!
+        get(){
+            if (to_border == null){
+                to_border = (0..20).map { PotentialObject(DecartPoint(0.0, it * consts!!.GAME_HEIGHT/20.0))} +
+                        (0..20).map { PotentialObject(DecartPoint(consts!!.GAME_WIDTH, it * consts!!.GAME_HEIGHT/20.0))} +
+                        (1..19).map { PotentialObject(DecartPoint(it * consts!!.GAME_WIDTH/20.0, 0.0))} +
+                        (1..19).map { PotentialObject(DecartPoint(it * consts!!.GAME_WIDTH/20.0, consts!!.GAME_HEIGHT))}
             }
+            return to_border!!
+        }
 
     var to_border : List<PotentialObject>? = null
 
     private fun findFood() : Food? = world!!.foods.firstOrNull()
 
     private fun potentialObjects() = toBorder //+
-            //world!!.enemies.map { PotentialObject(it.position)} +
-            //world!!.foods.filter{
-             //           it.position.x > 50 && it.position.y > 50 && consts!!.GAME_WIDTH - it.position.x > 50 && consts!!.GAME_HEIGHT - it.position.y > 50
-             //       }.take(10).map { PotentialObject(it.position)}
+    //world!!.enemies.map { PotentialObject(it.position)} +
+    //world!!.foods.filter{
+    //           it.position.x > 50 && it.position.y > 50 && consts!!.GAME_WIDTH - it.position.x > 50 && consts!!.GAME_HEIGHT - it.position.y > 50
+    //       }.take(10).map { PotentialObject(it.position)}
 
     var tick_to_spleet = 0
 
@@ -577,6 +714,7 @@ class SimpleStrategy : IStrategy{
 
         var needSpleet = world.maxHeroSize() > 120.0 && world.maxEnemySize() * 2.4 < world.minHeroSize()
         var noNeedSpleet = tick_to_spleet > 0
+        world.warning = false
         if (!needSpleet)
             for (hero in world.heroes) {
                 if (needSpleet) break
@@ -588,9 +726,12 @@ class SimpleStrategy : IStrategy{
                     ) needSpleet = true
                     if (enemy.weight > hero.weight * 0.6 && hero.speed.length > 0.5 &&
                             hero.speed.cos(enemy.position - hero.position) > 0.96 &&
-                            (enemy.position - hero.position).length < 1.2 * hero.splitDistance())
+                            (enemy.position - hero.position).length < 1.2 * hero.splitDistance()) {
                         noNeedSpleet = true
-
+                    }
+                    if ((enemy.position - hero.position).length < hero.getSeenCircle(2).radius && hero.weight * 1.2 < enemy.weight || (enemy.position - hero.position).length < enemy.splitDistance() && enemy.speed.length > 0.5 &&  enemy.speed.cos(enemy.position - hero.position) > 0.96 && hero.weight < enemy.weight * 0.6 ) {
+                        world.warning = true
+                    }
                 }
                 if (world.areSeenEnemy())
                     for (virus in world.viruses) {
@@ -603,12 +744,11 @@ class SimpleStrategy : IStrategy{
                     }
             }
 
-        world.warning = world.areSeenEnemy()
         needSpleet = !noNeedSpleet && needSpleet
 
-        val fields = hopes + world.enemies + world.foods + world.viruses
+        val fields = hopes + world.enemies + world.viruses
 
-        val toMove = PolarPotentialFields(world.heroes, fields, potentialObjects()).toMove()
+        val toMove = PolarPotentialFields(world.heroes, if (world.warning ) listOf() else world.foods, fields, potentialObjects()).toMove()
         if (needSpleet) tick_to_spleet = 50
         makeLog("toMove = { ${toMove.x}, ${toMove.y} }")
         makeLog("from = { ${world.heroes[0].position.x}, ${world.heroes[0].position.y} }")
