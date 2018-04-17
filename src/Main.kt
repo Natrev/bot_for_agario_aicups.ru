@@ -228,7 +228,7 @@ abstract class Player(id : String, position: DecartPoint, weight : Double, var s
         //makeLog("a: $a")
         //makeLog("av: $av")
 
-        return a < av * 3.0
+        return a < av * 2.5
     }
 
     fun toTake2(pos : DecartPoint) : Boolean{
@@ -251,7 +251,7 @@ abstract class Player(id : String, position: DecartPoint, weight : Double, var s
         //makeLog("a: $a")
         //makeLog("av: $av")
 
-        return a < av * 1.2
+        return a < av * 1.6
     }
 
     fun getSeenCircle(cnt : Int) : SeenCircle {
@@ -277,7 +277,7 @@ abstract class Player(id : String, position: DecartPoint, weight : Double, var s
         val cos = direction.cos(offset)
         val distance = offset.length
 
-        if (1.2 * weight < player.weight && offset.length < (player.radius + radius) * 2)
+        if (1.2 * weight < player.weight && offset.length < (player.radius + radius) * Math.sqrt(world.heroes.size.toDouble()))
             return offset.normal * (4 * (1 + cos) * force * weight / player.weight / distance)
 
 
@@ -333,10 +333,10 @@ class Virus(id : String, position: DecartPoint, weight : Double) : CircularObjec
     override fun effect(player : Player) : DecartVector{
         val offset = position - player.position
         val distance = offset.length
-        if (!world.warning || player.weight > 120.0)
+        if (player.weight > 120.0)
             return DecartVector(0.0, 0.0)
         if (distance > player.radius * 3 || player.weight < 120.0) return DecartVector(0.0, 0.0)
-        return offset.normal * (-force / consts!!.VISCOSITY / (30.0 + Math.sqrt(offset.length)))
+        return offset.normal * (-force * force / consts!!.VISCOSITY / (Math.max(1.0, Math.sqrt(offset.length) - player.radius)))
     }
 }
 
@@ -445,12 +445,12 @@ class PolarPotentialFields(var objects :List<Player>, var foods : List<Food>, va
         for (fd in foods){
             for (obj in objects){
 
-                if (obj.toTake(fd.position) || obj.speed.length < 3) {
+                if ((obj.position - fd.position).cos(obj.speed) > 0.7|| obj.speed.length < 1 || (fd.position - obj.position).cos(obj.speed)> 0.5 ) {
                     val vc =
-                            if (obj.toTake2(fd.position) || obj.speed.length < 3)
+                            if (obj.toTake2(fd.position) || obj.speed.length < 1)
                                 fd.effect(obj)
                             else
-                                obj.speed.normal * (-1.0 * fd.effect(obj).length)
+                                obj.speed.normal * (-0.1 * fd.effect(obj).length)
                     for (pt in points){
                         pt.tmp_potential = Math.max(pt.tmp_potential,vc.length * (pt.toMove - obj.position).cos(vc))
                     }
@@ -481,20 +481,9 @@ class PolarPotentialFields(var objects :List<Player>, var foods : List<Food>, va
                     if (point.toMove.x == consts!!.GAME_WIDTH && consts!!.GAME_WIDTH - obj.position.x < obj.radius * 3)
                         point.potential -= 10000000 / (consts!!.GAME_WIDTH - obj.position.x + 1)
                 }
-                else{
+                if (obj.speed.length / Math.sqrt(consts!!.INERTION_FACTOR) > 4.5){
 
-                    if (point.toMove.y == 0.0 && obj.position.y < obj.radius * 1.5)
-                        point.potential -= 10000000 / (obj.position.y + 1)
-                    if (point.toMove.y == consts!!.GAME_HEIGHT && consts!!.GAME_HEIGHT - obj.position.y < obj.radius * 1.5)
-                        point.potential -= 10000000 / (consts!!.GAME_HEIGHT - obj.position.y )
-                    if (point.toMove.x == 0.0 && obj.position.x < obj.radius * 1.5)
-                        point.potential -= 10000000 / (obj.position.x + 1)
-                    if (point.toMove.x == consts!!.GAME_WIDTH && consts!!.GAME_WIDTH - obj.position.x < obj.radius * 1.5)
-                        point.potential -= 10000000 / (consts!!.GAME_WIDTH - obj.position.x + 1)
-                }
-                if (obj.speed.length / consts!!.INERTION_FACTOR > 1.5){
-
-                    point.potential += -100.0 * (point.toMove - obj.position).cos(obj.speed)
+                    point.potential += -1.0 * (point.toMove - obj.position).cos(obj.speed)
 
                 }
             }
@@ -723,7 +712,7 @@ class SimpleStrategy : IStrategy{
         makeLog("center = { ${consts!!.CENTER.x}, ${consts!!.CENTER.y} }")
         makeLog("heroPos = { ${world.heroes[0].position.x}, ${world.heroes[0].position.y} }")
 
-        var needSpleet = world.maxHeroSize() > 120.0 && world.maxEnemySize() * 2.4 < world.minHeroSize()
+        var needSpleet = world.maxHeroSize() > 120 && world.maxEnemySize() * 2.4 < world.minHeroSize()
         var noNeedSpleet = tick_to_spleet > 0
         world.warning = false
         if (!needSpleet)
