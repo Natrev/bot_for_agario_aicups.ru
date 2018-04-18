@@ -6,6 +6,7 @@ import javax.management.Query
 import kotlin.collections.ArrayList
 import kotlin.math.PI
 import kotlin.math.cos
+import kotlin.math.max
 import kotlin.math.sin
 
 val isDebug = false
@@ -277,32 +278,28 @@ abstract class Player(id : String, position: DecartPoint, weight : Double, var s
         val cos = direction.cos(offset)
         val distance = offset.length
 
+        var vec = (offset + speed * (offset.length / player.speed.length))
+        vec += DecartVector(1.0, 0.0) * (max(player.radius * 4 / (player.position.x), 1.0) *player.position.x / position.x + 1.0)
+        vec += DecartVector(0.0, 1.0 ) * (max(player.radius * 4 / (player.position.y), 1.0) *player.position.y / position.y + 1.0)
+        vec += DecartVector(-1.0, 0.0) * (max(player.radius * 4 / (consts!!.GAME_WIDTH - player.position.x), 1.0) *(consts!!.GAME_WIDTH - player.position.x) / (consts!!.GAME_WIDTH - position.x) + 1.0)
+        vec += DecartVector(0.0, -1.0) * (max(player.radius * 4 / (consts!!.GAME_HEIGHT - player.position.y), 1.0) *(consts!!.GAME_HEIGHT - player.position.y) / (consts!!.GAME_HEIGHT - position.y) + 1.0)
+
         if (1.2 * weight < player.weight && offset.length < player.getSeenCircle(1).radius)
-            return offset.normal * (4 * (1 + cos) * force * weight / player.weight / distance)
+            return vec.normal * (4 * (1 + cos) * force * weight / player.weight / distance)
 
 
         if (offset.length > player.getSeenCircle(3).radius && player.weight > weight * 0.6 || offset.length > splitDistance() || (1.2 * weight < player.weight))
             return DecartVector(0.0, 0.0)
 
-        var vec =
+        vec =
                 (if (speed.perpen.cos(player.speed) >= 0.0) speed.perpen
                 else  speed.perpen * -1.0).normal + offset.normal * -1.0
 
-        if (player.position.x < player.radius * 4 && DecartVector(1.0, 0.0).cos(vec) < 0){
-            vec += DecartVector(1.0, 0.0) * (player.position.x / position.x + 1.0)
-        }
+        vec += DecartVector(1.0, 0.0) * (max(player.radius * 4 / (player.position.x), 1.0) *player.position.x / position.x + 1.0)
+        vec += DecartVector(0.0, 1.0 ) * (max(player.radius * 4 / (player.position.y), 1.0) *player.position.y / position.y + 1.0)
+        vec += DecartVector(-1.0, 0.0) * (max(player.radius * 4 / (consts!!.GAME_WIDTH - player.position.x), 1.0) *(consts!!.GAME_WIDTH - player.position.x) / (consts!!.GAME_WIDTH - position.x) + 1.0)
+        vec += DecartVector(0.0, -1.0) * (max(player.radius * 4 / (consts!!.GAME_HEIGHT - player.position.y), 1.0) *(consts!!.GAME_HEIGHT - player.position.y) / (consts!!.GAME_HEIGHT - position.y) + 1.0)
 
-        if (player.position.y < player.radius * 4 && DecartVector(0.0, 1.0).cos(vec) < 0 ){
-            vec += DecartVector(0.0, 1.0) * (player.position.y / position.y + 1.0)
-        }
-        if (consts!!.GAME_WIDTH - player.position.x < player.radius * 4 && DecartVector(-1.0, 0.0).cos(vec) < 0 ){
-
-            vec += DecartVector(-1.0, 0.0) * ((consts!!.GAME_WIDTH - player.position.x) / (consts!!.GAME_WIDTH - position.x) + 1.0)
-        }
-        if (consts!!.GAME_HEIGHT - player.position.y < player.radius * 4 && DecartVector(0.0, -1.0).cos(vec) < 0 ){
-
-            vec += DecartVector(0.0, -1.0) * ((consts!!.GAME_HEIGHT - player.position.y) / (consts!!.GAME_HEIGHT - position.y) + 1.0)
-        }
 
         return if (weight< player.weight * 1.15 ) vec * (force / player.weight / distance )
         else vec * (9  * force * weight / player.weight / distance)
@@ -333,10 +330,10 @@ class Virus(id : String, position: DecartPoint, weight : Double) : CircularObjec
     override fun effect(player : Player) : DecartVector{
         val offset = position - player.position
         val distance = offset.length
-        if (!world.warning || player.weight > 120.0)
+        if (!world.warning || player.weight < 120.0)
             return DecartVector(0.0, 0.0)
         if (distance > player.radius * 3 || player.weight < 120.0) return DecartVector(0.0, 0.0)
-        return offset.normal * (-force / consts!!.VISCOSITY / (30.0 + Math.sqrt(offset.length)))
+        return offset.normal * (-force  / consts!!.VISCOSITY / (Math.max(-30.0 + offset.length, 1.0)))
     }
 }
 
@@ -398,30 +395,6 @@ class AngleField(override val force : Double, override val position: DecartPoint
     }
 }
 
-class BorderField(override val force : Double, override val position: DecartPoint, val nearDistance: Double ) : IPotentialSource{
-
-    override fun effect(player : Player) : DecartVector{
-        val offset = position - player.position
-        val distance =
-                if (position.y == -1.0) Math.abs(position.x - player.position.x)
-                else Math.abs(position.y - player.position.y)
-
-        if (distance > nearDistance) return DecartVector(0.0, 0.0)
-        var vec =
-                if (position.y == -1.0) DecartVector((player.position.x - position.x) / distance, 0.0)
-                else DecartVector(0.0, (player.position.y - position.y) / distance)
-        if (position.y == -1.0 && player.position.y < consts!!.GAME_HEIGHT - player.position.y)
-            vec += DecartVector(0.0, 1.0) * ((consts!!.GAME_HEIGHT - player.position.y) / player.position.y)
-        if (position.y == -1.0 && player.position.y > consts!!.GAME_HEIGHT - player.position.y)
-            vec += DecartVector(0.0, -1.0) * (player.position.y / (consts!!.GAME_HEIGHT - player.position.y))
-        if (position.x == -1.0 && player.position.x < consts!!.GAME_WIDTH - player.position.x)
-            vec += DecartVector(1.0, 0.0) * ((consts!!.GAME_WIDTH - player.position.x) / player.position.x)
-        if (position.x == -1.0 && player.position.x > consts!!.GAME_WIDTH - player.position.x)
-            vec += DecartVector(-1.0, 0.0) * (player.position.y/(consts!!.GAME_WIDTH - player.position.x))
-        return vec * (force / player.weight / (1 + offset.length))
-
-    }
-}
 
 
 class PotentialObject(var toMove : DecartPoint) : IPotential{
@@ -437,7 +410,7 @@ class PotentialObject(var toMove : DecartPoint) : IPotential{
 
 
 
-class PolarPotentialFields(var objects :List<Player>, var foods : List<Food>, val fields: List<IPotentialSource>, val points : List<PotentialObject>){
+class PolarPotentialFields(var objects :List<Player>, var foods : List<Food>, val viruses : List<Virus>, val fields: List<IPotentialSource>, val points : List<PotentialObject>){
     fun toMove() : DecartPoint{
 
 
@@ -456,6 +429,20 @@ class PolarPotentialFields(var objects :List<Player>, var foods : List<Food>, va
             }
             for (pt in points){
                 pt.apply()
+            }
+        }
+
+        for (vs in viruses){
+            for (obj in objects){
+
+                if (obj.toTake(vs.position)) {
+                    val vc = vs.effect(obj)
+                    if (vc.x == 0.0 && vc.y == 0.0) continue
+                    for (pt in points){
+                        pt.potential += vc.length * (pt.toMove - obj.position).cos(vc)
+                    }
+                }
+
             }
         }
 
@@ -478,7 +465,7 @@ class PolarPotentialFields(var objects :List<Player>, var foods : List<Food>, va
                     if (point.toMove.x == consts!!.GAME_WIDTH && consts!!.GAME_WIDTH - obj.position.x < obj.radius * 2)
                         point.potential -= 10000000 / (consts!!.GAME_WIDTH - obj.position.x + 1)
                 }
-                if (obj.speed.length / consts!!.INERTION_FACTOR > 1.5){
+                if (!world.warning && obj.speed.length / consts!!.INERTION_FACTOR > 1.5){
 
                     point.potential += - (point.toMove - obj.position).cos(obj.speed)
 
@@ -490,34 +477,7 @@ class PolarPotentialFields(var objects :List<Player>, var foods : List<Food>, va
     }
 }
 
-data class QueryInfo(val x : Int, val y : Int, val sp : Int)
 
-class InertionPrecalc(val weight : Double, val ddist : Double, val ptCnt : Int, val vectors : List<DecartVector>){
-    val matrix = Array(ptCnt, {Array(ptCnt, {Array(ptCnt,{-1})})})
-
-    val maxSpeed = consts!!.SPEED_FACTOR / weight
-    val A = consts!!.INERTION_FACTOR / weight
-
-    fun precalc(){
-        val cc = consts!!
-        val q = ArrayList<QueryInfo>()
-        val p = ArrayList<QueryInfo>()
-        q.add(QueryInfo(0,0,0))
-        p.add(QueryInfo(0,0,0))
-        var left = 0
-        var right = 1
-        while (left < right){
-            val cur = q[left]
-            left += 1
-            for (v in vectors){
-            }
-
-
-        }
-    }
-
-
-}
 
 class Consts(config : JSONObject){
     //game
@@ -692,8 +652,8 @@ class SimpleStrategy : IStrategy{
 
     private fun findFood() : Food? = world!!.foods.firstOrNull()
 
-    private fun potentialObjects() = toBorder //+
-    //world!!.enemies.map { PotentialObject(it.position)} +
+    private fun potentialObjects() = toBorder +
+    world!!.enemies.map { PotentialObject(it.position)}
     //world!!.foods.filter{
     //           it.position.x > 50 && it.position.y > 50 && consts!!.GAME_WIDTH - it.position.x > 50 && consts!!.GAME_HEIGHT - it.position.y > 50
     //       }.take(10).map { PotentialObject(it.position)}
@@ -745,7 +705,7 @@ class SimpleStrategy : IStrategy{
 
         val fields = hopes + world.enemies + world.viruses
 
-        val toMove = PolarPotentialFields(world.heroes, if (world.warning ) listOf() else world.foods, fields, potentialObjects()).toMove()
+        val toMove = PolarPotentialFields(world.heroes, if (world.warning ) listOf() else world.foods, world.viruses, fields, potentialObjects()).toMove()
         if (needSpleet) tick_to_spleet = 35
         makeLog("toMove = { ${toMove.x}, ${toMove.y} }")
         makeLog("from = { ${world.heroes[0].position.x}, ${world.heroes[0].position.y} }")
