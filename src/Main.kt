@@ -277,11 +277,11 @@ abstract class Player(id : String, position: DecartPoint, weight : Double, var s
         val cos = direction.cos(offset)
         val distance = offset.length
 
-        if (1.2 * weight < player.weight && offset.length < (player.radius + radius) * 2)
+        if (1.2 * weight < player.weight && offset.length < player.getSeenCircle(1).radius)
             return offset.normal * (4 * (1 + cos) * force * weight / player.weight / distance)
 
 
-        if (offset.length > player.getSeenCircle(2).radius && player.weight > weight * 0.6 || offset.length > splitDistance() || (1.2 * weight < player.weight))
+        if (offset.length > player.getSeenCircle(3).radius && player.weight > weight * 0.6 || offset.length > splitDistance() || (1.2 * weight < player.weight))
             return DecartVector(0.0, 0.0)
 
         var vec =
@@ -289,23 +289,23 @@ abstract class Player(id : String, position: DecartPoint, weight : Double, var s
                 else  speed.perpen * -1.0).normal + offset.normal * -1.0
 
         if (player.position.x < player.radius * 4 && DecartVector(1.0, 0.0).cos(vec) < 0){
-            vec += DecartVector(1.0, 0.0) * (player.position.x / position.x)
+            vec += DecartVector(1.0, 0.0) * (player.position.x / position.x + 1.0)
         }
 
         if (player.position.y < player.radius * 4 && DecartVector(0.0, 1.0).cos(vec) < 0 ){
-            vec += DecartVector(0.0, 1.0) * (player.position.y / position.y)
+            vec += DecartVector(0.0, 1.0) * (player.position.y / position.y + 1.0)
         }
         if (consts!!.GAME_WIDTH - player.position.x < player.radius * 4 && DecartVector(-1.0, 0.0).cos(vec) < 0 ){
 
-            vec += DecartVector(-1.0, 0.0) * ((consts!!.GAME_WIDTH - player.position.x) / (consts!!.GAME_WIDTH - position.x))
+            vec += DecartVector(-1.0, 0.0) * ((consts!!.GAME_WIDTH - player.position.x) / (consts!!.GAME_WIDTH - position.x) + 1.0)
         }
         if (consts!!.GAME_HEIGHT - player.position.y < player.radius * 4 && DecartVector(0.0, -1.0).cos(vec) < 0 ){
 
-            vec += DecartVector(0.0, -1.0) * ((consts!!.GAME_HEIGHT - player.position.y) / (consts!!.GAME_HEIGHT - position.y))
+            vec += DecartVector(0.0, -1.0) * ((consts!!.GAME_HEIGHT - player.position.y) / (consts!!.GAME_HEIGHT - position.y) + 1.0)
         }
 
         return if (weight< player.weight * 1.15 ) vec * (force / player.weight / distance )
-        else vec * (7  * force * weight / player.weight / distance)
+        else vec * (9  * force * weight / player.weight / distance)
     }
 }
 
@@ -375,7 +375,8 @@ class HopeField(override val force : Double, val nearDistance : Double) : IPoten
         var rdp = world.getRadiusPerpen(player.position)
 
         if (rdp.cos(direction) < 0) rdp *= -1.0
-        return (rdp.normal + to_center.normal *( (to_center.length - consts!!.GAME_WIDTH / 4) / (consts!!.GAME_WIDTH / 2)) + direction.normal * 0.1)*(force / player.weight / (30.0 + Math.sqrt(to_center.length)))
+        val tmp = (to_center.length - consts!!.GAME_WIDTH / 4) / (consts!!.GAME_WIDTH / 2)
+        return (rdp.normal + to_center.normal *(if (tmp > 0.0) tmp*2 else tmp ) + direction.normal * 0.1)*(force / player.weight / (30.0 + Math.sqrt(to_center.length)))
     }
 
     fun check(where : DecartPoint){
@@ -392,7 +393,7 @@ class AngleField(override val force : Double, override val position: DecartPoint
         val offset = position - player.position
         val distance = offset.length
         if (distance > nearDistance) return DecartVector(0.0, 0.0)
-        return offset.normal * (-force / player.weight / (30.0 + Math.sqrt(offset.length)))
+        return offset.normal * (-force / player.weight / (20.0 + Math.sqrt(offset.length)))
 
     }
 }
@@ -445,12 +446,8 @@ class PolarPotentialFields(var objects :List<Player>, var foods : List<Food>, va
         for (fd in foods){
             for (obj in objects){
 
-                if (obj.toTake(fd.position) || obj.speed.length < 3) {
-                    val vc =
-                            if (obj.toTake2(fd.position) || obj.speed.length < 3)
-                                fd.effect(obj)
-                            else
-                                obj.speed.normal * (-1.0 * fd.effect(obj).length)
+                if (obj.toTake(fd.position)) {
+                    val vc = fd.effect(obj)
                     for (pt in points){
                         pt.tmp_potential = Math.max(pt.tmp_potential,vc.length * (pt.toMove - obj.position).cos(vc))
                     }
@@ -472,29 +469,18 @@ class PolarPotentialFields(var objects :List<Player>, var foods : List<Food>, va
                 point.potential += res.length * (point.toMove - obj.position).cos(res)
 
                 if (world.warning) {
-                    if (point.toMove.y == 0.0 && obj.position.y < obj.radius * 3)
+                    if (point.toMove.y == 0.0 && obj.position.y < obj.radius * 2)
                         point.potential -= 10000000 / (obj.position.y + 1)
-                    if (point.toMove.y == consts!!.GAME_HEIGHT && consts!!.GAME_HEIGHT - obj.position.y < obj.radius * 3)
+                    if (point.toMove.y == consts!!.GAME_HEIGHT && consts!!.GAME_HEIGHT - obj.position.y < obj.radius * 2)
                         point.potential -= 10000000 / (consts!!.GAME_HEIGHT - obj.position.y )
-                    if (point.toMove.x == 0.0 && obj.position.x < obj.radius * 3)
+                    if (point.toMove.x == 0.0 && obj.position.x < obj.radius * 2)
                         point.potential -= 10000000 / (obj.position.x + 1)
-                    if (point.toMove.x == consts!!.GAME_WIDTH && consts!!.GAME_WIDTH - obj.position.x < obj.radius * 3)
-                        point.potential -= 10000000 / (consts!!.GAME_WIDTH - obj.position.x + 1)
-                }
-                else{
-
-                    if (point.toMove.y == 0.0 && obj.position.y < obj.radius * 1.5)
-                        point.potential -= 10000000 / (obj.position.y + 1)
-                    if (point.toMove.y == consts!!.GAME_HEIGHT && consts!!.GAME_HEIGHT - obj.position.y < obj.radius * 1.5)
-                        point.potential -= 10000000 / (consts!!.GAME_HEIGHT - obj.position.y )
-                    if (point.toMove.x == 0.0 && obj.position.x < obj.radius * 1.5)
-                        point.potential -= 10000000 / (obj.position.x + 1)
-                    if (point.toMove.x == consts!!.GAME_WIDTH && consts!!.GAME_WIDTH - obj.position.x < obj.radius * 1.5)
+                    if (point.toMove.x == consts!!.GAME_WIDTH && consts!!.GAME_WIDTH - obj.position.x < obj.radius * 2)
                         point.potential -= 10000000 / (consts!!.GAME_WIDTH - obj.position.x + 1)
                 }
                 if (obj.speed.length / consts!!.INERTION_FACTOR > 1.5){
 
-                    point.potential += -100.0 * (point.toMove - obj.position).cos(obj.speed)
+                    point.potential += - (point.toMove - obj.position).cos(obj.speed)
 
                 }
             }
@@ -732,15 +718,15 @@ class SimpleStrategy : IStrategy{
                 for (enemy in world.enemies) {
                     if (needSpleet) break
                     if (enemy.weight * 2.5 < hero.weight && hero.speed.length > 0.5 &&
-                            hero.speed.cos(enemy.position - hero.position) > 0.96 &&
+                            hero.speed.cos(enemy.position - hero.position) > 0.97 &&
                             (enemy.position - hero.position).length < 1.2 * hero.splitDistance()
                     ) needSpleet = true
                     if (enemy.weight > hero.weight * 0.6 && hero.speed.length > 0.5 &&
-                            hero.speed.cos(enemy.position - hero.position) > 0.96 &&
+                            hero.speed.cos(enemy.position - hero.position) > 0.97 &&
                             (enemy.position - hero.position).length < 1.2 * hero.splitDistance()) {
                         noNeedSpleet = true
                     }
-                    if ((enemy.position - hero.position).length < hero.getSeenCircle(2).radius && hero.weight * 1.2 < enemy.weight || (enemy.position - hero.position).length < enemy.splitDistance() && enemy.speed.length > 0.5 &&  enemy.speed.cos(enemy.position - hero.position) > 0.96 && hero.weight < enemy.weight * 0.6 ) {
+                    if ((enemy.position - hero.position).length < hero.getSeenCircle(3).radius && hero.weight * 1.2 < enemy.weight || (enemy.position - hero.position).length < enemy.splitDistance() && enemy.speed.length > 0.5 &&  enemy.speed.cos(enemy.position - hero.position) > 0.97 && hero.weight < enemy.weight * 0.6 ) {
                         world.warning = true
                     }
                 }
@@ -760,7 +746,7 @@ class SimpleStrategy : IStrategy{
         val fields = hopes + world.enemies + world.viruses
 
         val toMove = PolarPotentialFields(world.heroes, if (world.warning ) listOf() else world.foods, fields, potentialObjects()).toMove()
-        if (needSpleet) tick_to_spleet = 50
+        if (needSpleet) tick_to_spleet = 35
         makeLog("toMove = { ${toMove.x}, ${toMove.y} }")
         makeLog("from = { ${world.heroes[0].position.x}, ${world.heroes[0].position.y} }")
         return StepInfo(toMove = toMove, split = needSpleet)
