@@ -4,10 +4,7 @@ import java.io.FileWriter
 import java.util.*
 import javax.management.Query
 import kotlin.collections.ArrayList
-import kotlin.math.PI
-import kotlin.math.cos
-import kotlin.math.max
-import kotlin.math.sin
+import kotlin.math.*
 
 val isDebug = false
 
@@ -157,6 +154,8 @@ abstract class Object(override var position : DecartPoint) : IRemember, IPotenti
     override val force = consts!!.GENERAL_FORCE
 }
 
+fun sqr(a : Double) = a * a
+
 
 interface ICircle{
     val position : DecartPoint
@@ -279,12 +278,12 @@ abstract class Player(id : String, position: DecartPoint, weight : Double, var s
         val distance = offset.length
 
         var vec = (offset + speed * (offset.length / player.speed.length))
-        vec += DecartVector(1.0, 0.0) * (max(player.radius * 4 / (player.position.x), 1.0) *player.position.x / position.x + 1.0)
-        vec += DecartVector(0.0, 1.0 ) * (max(player.radius * 4 / (player.position.y), 1.0) *player.position.y / position.y + 1.0)
-        vec += DecartVector(-1.0, 0.0) * (max(player.radius * 4 / (consts!!.GAME_WIDTH - player.position.x), 1.0) *(consts!!.GAME_WIDTH - player.position.x) / (consts!!.GAME_WIDTH - position.x) + 1.0)
-        vec += DecartVector(0.0, -1.0) * (max(player.radius * 4 / (consts!!.GAME_HEIGHT - player.position.y), 1.0) *(consts!!.GAME_HEIGHT - player.position.y) / (consts!!.GAME_HEIGHT - position.y) + 1.0)
+        vec += DecartVector(1.0, 0.0) * (max(player.radius * 4 / (player.position.x), 1.0) *sqr(player.position.x / position.x) + 1.0)
+        vec += DecartVector(0.0, 1.0 ) * (max(player.radius * 4 / (player.position.y), 1.0) *sqr(player.position.y / position.y) + 1.0)
+        vec += DecartVector(-1.0, 0.0) * (max(player.radius * 4 / (consts!!.GAME_WIDTH - player.position.x), 1.0) *sqr((consts!!.GAME_WIDTH - player.position.x) / (consts!!.GAME_WIDTH - position.x)) + 1.0)
+        vec += DecartVector(0.0, -1.0) * (max(player.radius * 4 / (consts!!.GAME_HEIGHT - player.position.y), 1.0) *sqr((consts!!.GAME_HEIGHT - player.position.y) / (consts!!.GAME_HEIGHT - position.y)) + 1.0)
 
-        if (1.2 * weight < player.weight && offset.length < player.getSeenCircle(1).radius)
+        if (1.2 * weight < player.weight && offset.length < player.getSeenCircle(min(world.heroes.size.toInt(), 2)).radius * 0.8)
             return vec.normal * (4 * (1 + cos) * force * weight / player.weight / distance)
 
 
@@ -292,8 +291,8 @@ abstract class Player(id : String, position: DecartPoint, weight : Double, var s
             return DecartVector(0.0, 0.0)
 
         vec =
-                (if (speed.perpen.cos(player.speed) >= 0.0) speed.perpen
-                else  speed.perpen * -1.0).normal + offset.normal * -1.0
+                (if (speed.perpen.cos(offset) >= 0.0) speed.perpen * -1.0
+                else  speed.perpen).normal + offset.normal * -1.0
 
         vec += DecartVector(1.0, 0.0) * (max(player.radius * 4 / (player.position.x), 1.0) *player.position.x / position.x + 1.0)
         vec += DecartVector(0.0, 1.0 ) * (max(player.radius * 4 / (player.position.y), 1.0) *player.position.y / position.y + 1.0)
@@ -410,7 +409,7 @@ class PotentialObject(var toMove : DecartPoint) : IPotential{
 
 
 
-class PolarPotentialFields(var objects :List<Player>, var foods : List<Food>, val viruses : List<Virus>, val fields: List<IPotentialSource>, val points : List<PotentialObject>){
+class PolarPotentialFields(var objects :List<Player>, var foods : List<Food>, val viruses : List<Virus>, val enemies : List<Enemy>, val fields: List<IPotentialSource>, val points : List<PotentialObject>){
     fun toMove() : DecartPoint{
 
 
@@ -438,11 +437,78 @@ class PolarPotentialFields(var objects :List<Player>, var foods : List<Food>, va
                 if (obj.toTake(vs.position)) {
                     val vc = vs.effect(obj)
                     if (vc.x == 0.0 && vc.y == 0.0) continue
-                    for (pt in points){
-                        pt.potential += vc.length * (pt.toMove - obj.position).cos(vc)
+                        for (pt in points){
+                            pt.tmp_potential = Math.min(pt.tmp_potential,vc.length * (pt.toMove - obj.position).cos(vc))
+                        }
                     }
                 }
 
+                for (pt in points){
+                    pt.apply()
+                }
+            }
+
+        for (obj in objects){
+
+            var res = DecartVector(0.0, 0.0)
+            for (en in enemies){
+                if (1.2 * en.weight > obj.weight ) continue
+                val vc = en.effect(obj)
+                if (vc.x == 0.0 && vc.y == 0.0) continue
+                for (pt in points){
+                    pt.tmp_potential = Math.max(pt.tmp_potential,vc.length * (pt.toMove - obj.position).cos(vc))
+                }
+            }
+            for (point in points){
+                point.apply()
+
+                if (world.warning) {
+                    if (point.toMove.y == 0.0 && obj.position.y < obj.getSeenCircle(1).radius)
+                        point.potential -=  10000 / (obj.position.y + 1)
+                    if (point.toMove.y == consts!!.GAME_HEIGHT && consts!!.GAME_HEIGHT - obj.position.y < obj.getSeenCircle(1).radius)
+                        point.potential -= 10000 / (consts!!.GAME_HEIGHT - obj.position.y )
+                    if (point.toMove.x == 0.0 && obj.position.x < obj.getSeenCircle(1).radius)
+                        point.potential -= 10000 / (obj.position.x + 1)
+                    if (point.toMove.x == consts!!.GAME_WIDTH && consts!!.GAME_WIDTH - obj.position.x < obj.getSeenCircle(1).radius)
+                        point.potential -= 10000 / (consts!!.GAME_WIDTH - obj.position.x + 1)
+                }
+                if (!world.warning && obj.speed.length / consts!!.INERTION_FACTOR > 1.5){
+
+                    point.potential += - (point.toMove - obj.position).cos(obj.speed)
+
+                }
+            }
+        }
+
+        for (obj in objects){
+
+            var res = DecartVector(0.0, 0.0)
+            for (en in enemies){
+                if (1.2 * en.weight < obj.weight ) continue
+                val vc = en.effect(obj)
+                if (vc.x == 0.0 && vc.y == 0.0) continue
+                for (pt in points){
+                    pt.tmp_potential = Math.min(pt.tmp_potential,vc.length * (pt.toMove - obj.position).cos(vc))
+                }
+            }
+            for (point in points){
+                point.apply()
+
+                if (world.warning) {
+                    if (point.toMove.y == 0.0 && obj.position.y < obj.radius * 2)
+                        point.potential -= 10000000 / (obj.position.y + 1)
+                    if (point.toMove.y == consts!!.GAME_HEIGHT && consts!!.GAME_HEIGHT - obj.position.y < obj.radius * 2)
+                        point.potential -= 10000000 / (consts!!.GAME_HEIGHT - obj.position.y )
+                    if (point.toMove.x == 0.0 && obj.position.x < obj.radius * 2)
+                        point.potential -= 10000000 / (obj.position.x + 1)
+                    if (point.toMove.x == consts!!.GAME_WIDTH && consts!!.GAME_WIDTH - obj.position.x < obj.radius * 2)
+                        point.potential -= 10000000 / (consts!!.GAME_WIDTH - obj.position.x + 1)
+                }
+                if (!world.warning && obj.speed.length / consts!!.INERTION_FACTOR > 1.5){
+
+                    point.potential += - (point.toMove - obj.position).cos(obj.speed)
+
+                }
             }
         }
 
@@ -465,11 +531,11 @@ class PolarPotentialFields(var objects :List<Player>, var foods : List<Food>, va
                     if (point.toMove.x == consts!!.GAME_WIDTH && consts!!.GAME_WIDTH - obj.position.x < obj.radius * 2)
                         point.potential -= 10000000 / (consts!!.GAME_WIDTH - obj.position.x + 1)
                 }
-                if (!world.warning && obj.speed.length / consts!!.INERTION_FACTOR > 1.5){
+                //if (!world.warning && obj.speed.length / consts!!.INERTION_FACTOR > 1.5){
 
-                    point.potential += - (point.toMove - obj.position).cos(obj.speed)
+                   // point.potential += - (point.toMove - obj.position).cos(obj.speed)
 
-                }
+                //}
             }
         }
 
@@ -703,9 +769,9 @@ class SimpleStrategy : IStrategy{
 
         needSpleet = !noNeedSpleet && needSpleet
 
-        val fields = hopes + world.enemies + world.viruses
+        val fields = hopes + borders
 
-        val toMove = PolarPotentialFields(world.heroes, if (world.warning ) listOf() else world.foods, world.viruses, fields, potentialObjects()).toMove()
+        val toMove = PolarPotentialFields(world.heroes, world.foods, world.viruses, world.enemies, fields, potentialObjects()).toMove()
         if (needSpleet) tick_to_spleet = 35
         makeLog("toMove = { ${toMove.x}, ${toMove.y} }")
         makeLog("from = { ${world.heroes[0].position.x}, ${world.heroes[0].position.y} }")
